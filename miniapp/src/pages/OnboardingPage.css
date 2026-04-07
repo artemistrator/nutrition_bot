@@ -1,0 +1,133 @@
+.onboarding {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.onboarding__welcome {
+  text-align: center;
+  max-width: 340px;
+}
+
+.onboarding__emoji {
+  font-size: 72px;
+  margin-bottom: 16px;
+}
+
+.onboarding__title {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0 0 8px;
+}
+
+.onboarding__subtitle {
+  font-size: 16px;
+  color: #6b7280;
+  line-height: 1.5;
+  margin: 0 0 32px;
+}
+
+.onboarding__start-btn {
+  padding: 16px 48px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, background 0.2s;
+}
+
+.onboarding__start-btn:active {
+  transform: scale(0.96);
+}
+
+.onboarding__goals {
+  width: 100%;
+  max-width: 400px;
+}
+
+.onboarding__goals-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 20px;
+  text-align: center;
+}
+
+.onboarding__goals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.onboarding__goal-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 16px;
+  background: #fff;
+  border: 2px solid #e5e7eb;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+  position: relative;
+}
+
+.onboarding__goal-card:active {
+  transform: scale(0.98);
+}
+
+.onboarding__goal-card--active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.onboarding__goal-icon {
+  font-size: 36px;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f9fafb;
+  border-radius: 14px;
+  flex-shrink: 0;
+}
+
+.onboarding__goal-card--active .onboarding__goal-icon {
+  background: #dbeafe;
+}
+
+.onboarding__goal-info {
+  flex: 1;
+  text-align: left;
+}
+
+.onboarding__goal-label {
+  font-size: 17px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 2px;
+}
+
+.onboarding__goal-desc {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.onboarding__goal-check {
+  font-size: 20px;
+  color: #3b82f6;
+  font-weight: 700;
+}
+
+.onboarding__goal-spinner {
+  font-size: 20px;
+}

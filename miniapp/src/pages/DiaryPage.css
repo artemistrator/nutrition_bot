@@ -1,0 +1,470 @@
+.diary-page {
+  padding-bottom: 80px;
+  min-height: 100vh;
+}
+
+.diary-page--loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+}
+
+/* Calorie ring */
+.calorie-ring-card {
+  background: #fff;
+  border-radius: 16px;
+  margin: 12px;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.calorie-ring {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+
+.calorie-ring__svg {
+  width: 120px;
+  height: 120px;
+}
+
+.calorie-ring__progress {
+  transition: stroke-dashoffset 0.5s ease;
+}
+
+.calorie-ring__text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.calorie-ring__value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1;
+}
+
+.calorie-ring__goal {
+  font-size: 13px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+
+.calorie-ring__macros {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+  font-size: 14px;
+  color: #4b5563;
+}
+
+.calorie-ring__remaining {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+.calorie-ring__burned {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #22c55e;
+  font-weight: 500;
+}
+
+/* Quick actions */
+.quick-actions {
+  padding: 0 12px;
+  margin-bottom: 4px;
+}
+
+.quick-actions__tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.quick-actions__tab {
+  padding: 6px 16px;
+  border-radius: 16px;
+  border: 1.5px solid #e5e7eb;
+  background: #fff;
+  font-size: 14px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.quick-actions__tab--active {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: #eff6ff;
+}
+
+.quick-actions__scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.quick-actions__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-actions__pill {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: #f3f4f6;
+  border: none;
+  font-size: 14px;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.quick-actions__pill:active {
+  background: #e5e7eb;
+}
+
+/* Quick foods (deprecated, kept for compat) */
+.quick-foods {
+  padding: 0 12px;
+  margin-bottom: 4px;
+}
+
+.quick-foods__scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.quick-foods__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.quick-foods__pill {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: #f3f4f6;
+  border: none;
+  font-size: 14px;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.quick-foods__pill:active {
+  background: #e5e7eb;
+}
+
+/* Meals section */
+.meals-section {
+  padding: 0 12px;
+}
+
+.meals-section__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 16px 0 8px;
+}
+
+.meals-section__empty {
+  text-align: center;
+  color: #9ca3af;
+  padding: 32px 16px;
+  font-size: 14px;
+}
+
+/* Activities section */
+.activities-section {
+  padding: 0 12px;
+}
+
+.activities-section__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 8px 0 8px;
+}
+
+.activity-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  border-left: 3px solid #22c55e;
+}
+
+.activity-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.activity-card__time {
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.activity-card__burned {
+  font-size: 14px;
+  font-weight: 600;
+  color: #22c55e;
+}
+
+.activity-card__desc {
+  font-size: 15px;
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.activity-card__duration {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* Meal card */
+.meal-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+.meal-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.meal-card__time {
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.meal-card__calories {
+  font-size: 14px;
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+.meal-card__desc {
+  font-size: 15px;
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.meal-card__macros {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* FAB */
+.fab {
+  position: fixed;
+  bottom: 76px;
+  right: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  font-size: 28px;
+  line-height: 56px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  z-index: 50;
+  transition: transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.fab:active {
+  transform: scale(0.92);
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 200;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 500px;
+  padding: 24px 20px 32px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 16px;
+  text-align: center;
+}
+
+.modal__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal__choice-btn {
+  padding: 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.modal__choice-btn:active {
+  border-color: #3b82f6;
+}
+
+.modal__input-area {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal__textarea {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 15px;
+  resize: none;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.modal__textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.modal__analyze-btn,
+.modal__photo-btn {
+  padding: 14px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.modal__analyze-btn:disabled {
+  opacity: 0.6;
+}
+
+.modal__photo-area {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.modal__loading {
+  color: #6b7280;
+  margin-top: 12px;
+}
+
+.modal__result {
+  text-align: center;
+}
+
+.modal__result-name {
+  font-size: 17px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 12px;
+}
+
+.modal__result-macros {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  color: #4b5563;
+  margin-bottom: 20px;
+}
+
+.modal__result-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.modal__cancel-btn,
+.modal__save-btn {
+  flex: 1;
+  padding: 14px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+}
+
+.modal__cancel-btn {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.modal__save-btn {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.modal__save-btn--green {
+  background: #22c55e;
+}
+
+.modal__back-btn {
+  margin-top: 16px;
+  background: none;
+  border: none;
+  color: #3b82f6;
+  font-size: 15px;
+  cursor: pointer;
+  width: 100%;
+  text-align: center;
+  padding: 10px;
+}

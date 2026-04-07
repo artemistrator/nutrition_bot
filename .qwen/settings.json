@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(pip install *)",
+      "Bash(pip3 install *)",
+      "Bash(timeout *)",
+      "Bash(sleep *)",
+      "Bash(kill *)",
+      "Bash(wait *)",
+      "Bash(uvicorn *)",
+      "Bash(then)",
+      "Bash(curl *)",
+      "Bash(else)",
+      "Bash(fi)",
+      "Bash(rm *)",
+      "Bash(cd *)",
+      "Bash(echo *)",
+      "Bash(find *)",
+      "Bash(pkill *)",
+      "Bash(ls *)",
+      "Bash(grep *)",
+      "Bash(lsof *)",
+      "Bash(npm create *)",
+      "Bash(npm install)",
+      "Bash(mkdir *)",
+      "Bash(npx *)",
+      "Bash(head *)",
+      "Bash(ps *)",
+      "Bash(npm run *)",
+      "Bash(})",
+      "Bash(git init)",
+      "Bash(git add *)"
+    ]
+  },
+  "$version": 3
+}
