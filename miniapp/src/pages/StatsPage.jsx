@@ -3,6 +3,9 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend
 import { api } from '../api'
 import './StatsPage.css'
 
+const formatCalories = (value) => `${Math.round(Number(value) || 0)} ккал`
+const formatChartTick = (value) => Math.round(Number(value) || 0)
+
 export default function StatsPage() {
   const [days, setDays] = useState(7)
   const [history, setHistory] = useState([])
@@ -67,11 +70,11 @@ export default function StatsPage() {
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={chartData}>
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={d => d.slice(5)} />
-                <YAxis tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={formatChartTick} />
                 <Tooltip
                   formatter={(val, name) => {
                     const label = name === 'calories' ? 'Съедено' : 'Сожжено'
-                    return [`${val} ккал`, label]
+                    return [formatCalories(val), label]
                   }}
                   labelFormatter={(label) => label}
                 />

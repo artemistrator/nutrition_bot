@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -182,6 +183,15 @@ def _format_ambiguous_matches(matches: list[dict[str, Any]]) -> str:
     return f"Нашёл несколько похожих продуктов: {', '.join(names)}{suffix}. Уточни название."
 
 
+def _manual_item(name: str, grams: float) -> dict[str, Any]:
+    return {
+        "name": name,
+        "grams": grams,
+        "confidence": 1.0,
+        "source": "manual",
+    }
+
+
 def parse_edit_command(text: str) -> tuple[Optional[EditCommand], Optional[str]]:
     """Парсит команду редактирования.
 
@@ -267,13 +277,12 @@ def apply_meal_edit(structure: dict, edit_text: str) -> tuple[dict, Optional[str
             target = matches[0]
             target["grams"] = cmd.grams
             target["source"] = target.get("source", "llm")
+        elif len(items) == 1:
+            # В простом черновике из одного продукта естественная правка
+            # без `+` воспринимается как замена текущего продукта.
+            structure = {**structure, "items": [_manual_item(cmd.name, cmd.grams)]}
         else:
-            items.append({
-                "name": cmd.name,
-                "grams": cmd.grams,
-                "confidence": 1.0,
-                "source": "manual",
-            })
+            items.append(_manual_item(cmd.name, cmd.grams))
             structure = {**structure, "items": items}
 
     elif cmd.action == "add":
@@ -284,12 +293,7 @@ def apply_meal_edit(structure: dict, edit_text: str) -> tuple[dict, Optional[str
                 "Напиши без `+`, чтобы изменить граммы."
             )
 
-        items.append({
-            "name": cmd.name,
-            "grams": cmd.grams,
-            "confidence": 1.0,
-            "source": "manual",
-        })
+        items.append(_manual_item(cmd.name, cmd.grams))
         structure = {**structure, "items": items}
 
     return structure, None
@@ -344,7 +348,9 @@ async def handle_save(callback: CallbackQuery, state: FSMContext) -> None:
             parse_mode="Markdown",
         )
 
+    last_saved_structure = deepcopy(structure)
     await state.clear()
+    await state.update_data(last_saved_structure=last_saved_structure)
     await callback.answer("Сохранено ✅")
 
 
@@ -364,7 +370,8 @@ async def handle_edit(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.message.answer(
             "Исправь еду одной строкой.\n\n"
             f"{_edit_examples()}\n\n"
-            "Можно писать просто и по-человечески."
+            "Если в приёме один продукт, обычная правка заменит его. "
+            "`+` явно добавляет новый."
         )
 
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+from copy import deepcopy
 from typing import Any
 
 from aiogram import F, Router
@@ -201,14 +202,18 @@ async def handle_save_template_request(callback: CallbackQuery, state: FSMContex
         return
 
     data = await state.get_data()
-    structure = data.get("structure")
+    structure = data.get("template_structure") or data.get("structure") or data.get("last_saved_structure")
 
     if not structure:
-        await callback.answer("Нет сохранённого приёма для шаблона", show_alert=True)
+        await callback.answer("Не вижу сохранённый приём. Сначала сохрани еду и потом нажми ещё раз.", show_alert=True)
         return
 
     # Сохраняем структуру для FSM
-    await state.update_data(template_structure=structure)
+    template_structure = deepcopy(structure)
+    await state.update_data(
+        template_structure=template_structure,
+        last_saved_structure=deepcopy(template_structure),
+    )
     await state.set_state(TemplateState.awaiting_name)
 
     await callback.message.answer(
@@ -237,6 +242,9 @@ async def handle_template_name(message: Message, state: FSMContext) -> None:
 
     data = await state.get_data()
     structure = data.get("template_structure")
+    last_saved_structure = data.get("last_saved_structure")
+    if last_saved_structure is None and structure is not None:
+        last_saved_structure = deepcopy(structure)
 
     if not structure:
         await state.clear()
@@ -246,6 +254,8 @@ async def handle_template_name(message: Message, state: FSMContext) -> None:
     # Создаём шаблон
     template_id = await create_meal_template(message.from_user.id, name, structure)
     await state.clear()
+    if last_saved_structure:
+        await state.update_data(last_saved_structure=last_saved_structure)
 
     # Показываем превью
     meal_calc = calculate_meal(structure.get("items", []))
