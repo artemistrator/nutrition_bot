@@ -151,7 +151,7 @@ def _missing_user_column_statements(columns: set[str]) -> list[str]:
         "weight_kg": "ALTER TABLE users ADD COLUMN weight_kg REAL;",
         "activity_level": "ALTER TABLE users ADD COLUMN activity_level TEXT;",
         "goal_type": "ALTER TABLE users ADD COLUMN goal_type TEXT;",
-        "updated_at": "ALTER TABLE users ADD COLUMN updated_at TEXT DEFAULT CURRENT_TIMESTAMP;",
+        "updated_at": "ALTER TABLE users ADD COLUMN updated_at TEXT;",
         "weight": "ALTER TABLE users ADD COLUMN weight REAL;",
         "height": "ALTER TABLE users ADD COLUMN height REAL;",
     }
