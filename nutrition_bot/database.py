@@ -90,6 +90,7 @@ async def _ensure_schema_async(conn: aiosqlite.Connection) -> None:
         CREATE TABLE IF NOT EXISTS activities (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
+            activity_type TEXT NOT NULL DEFAULT 'workout',
             description TEXT NOT NULL,
             calories_burned REAL NOT NULL DEFAULT 0,
             duration_minutes INTEGER,
@@ -98,6 +99,10 @@ async def _ensure_schema_async(conn: aiosqlite.Connection) -> None:
         );
         """
     )
+    cursor = await conn.execute("PRAGMA table_info(activities);")
+    activity_columns = {row["name"] for row in await cursor.fetchall()}
+    for statement in _missing_activity_column_statements(activity_columns):
+        await conn.execute(statement)
     await conn.execute(
         """
         CREATE TABLE IF NOT EXISTS meal_templates (
@@ -154,6 +159,17 @@ def _missing_user_column_statements(columns: set[str]) -> list[str]:
         "updated_at": "ALTER TABLE users ADD COLUMN updated_at TEXT;",
         "weight": "ALTER TABLE users ADD COLUMN weight REAL;",
         "height": "ALTER TABLE users ADD COLUMN height REAL;",
+    }
+    for column, statement in required.items():
+        if column not in columns:
+            statements.append(statement)
+    return statements
+
+
+def _missing_activity_column_statements(columns: set[str]) -> list[str]:
+    statements: list[str] = []
+    required = {
+        "activity_type": "ALTER TABLE activities ADD COLUMN activity_type TEXT NOT NULL DEFAULT 'workout';",
     }
     for column, statement in required.items():
         if column not in columns:
@@ -404,6 +420,7 @@ async def delete_meal(meal_id: int, telegram_user_id: int) -> bool:
 
 async def add_activity(
     user_id: int,
+    activity_type: str,
     description: str,
     calories_burned: float,
     duration_minutes: int | None = None,
@@ -411,10 +428,10 @@ async def add_activity(
     db = await _db()
     cursor = await db.execute(
         """
-        INSERT INTO activities (user_id, description, calories_burned, duration_minutes)
-        VALUES (?, ?, ?, ?);
+        INSERT INTO activities (user_id, activity_type, description, calories_burned, duration_minutes)
+        VALUES (?, ?, ?, ?, ?);
         """,
-        (user_id, description, calories_burned, duration_minutes),
+        (user_id, activity_type, description, calories_burned, duration_minutes),
     )
     await db.commit()
     activity_id = cursor.lastrowid
@@ -427,7 +444,7 @@ async def get_today_activities(user_id: int) -> list[dict[str, Any]]:
     db = await _db()
     cursor = await db.execute(
         """
-        SELECT id, user_id, description, calories_burned, duration_minutes, created_at
+        SELECT id, user_id, activity_type, description, calories_burned, duration_minutes, created_at
         FROM activities
         WHERE user_id = ?
           AND date(created_at, 'localtime') = date('now', 'localtime')
@@ -455,6 +472,30 @@ async def get_activities_history(user_id: int, days: int) -> list[dict[str, Any]
     )
     rows = await cursor.fetchall()
     return [dict(row) for row in rows]
+
+
+async def get_activity_by_id(activity_id: int, telegram_user_id: int) -> dict[str, Any] | None:
+    db = await _db()
+    cursor = await db.execute(
+        """
+        SELECT id, user_id, activity_type, description, calories_burned, duration_minutes, created_at
+        FROM activities
+        WHERE id = ? AND user_id = ?;
+        """,
+        (activity_id, telegram_user_id),
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def delete_activity(activity_id: int, telegram_user_id: int) -> bool:
+    db = await _db()
+    cursor = await db.execute(
+        "DELETE FROM activities WHERE id = ? AND user_id = ?;",
+        (activity_id, telegram_user_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
 
 
 # --- Meal templates ---
@@ -651,6 +692,7 @@ def ensure_db_schema_sync(db_path: str | Path | None = None) -> None:
             CREATE TABLE IF NOT EXISTS activities (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
+                activity_type TEXT NOT NULL DEFAULT 'workout',
                 description TEXT NOT NULL,
                 calories_burned REAL NOT NULL DEFAULT 0,
                 duration_minutes INTEGER,
@@ -659,6 +701,11 @@ def ensure_db_schema_sync(db_path: str | Path | None = None) -> None:
             );
             """
         )
+        activity_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(activities);").fetchall()
+        }
+        for statement in _missing_activity_column_statements(activity_columns):
+            conn.execute(statement)
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS meal_templates (
@@ -980,6 +1027,7 @@ def sync_get_meals_history(user_id: int, days: int) -> list[dict[str, Any]]:
 
 def sync_add_activity(
     user_id: int,
+    activity_type: str,
     description: str,
     calories_burned: float,
     duration_minutes: int | None = None,
@@ -987,8 +1035,11 @@ def sync_add_activity(
     conn = _sync_connect()
     try:
         cur = conn.execute(
-            "INSERT INTO activities (user_id, description, calories_burned, duration_minutes) VALUES (?, ?, ?, ?);",
-            (user_id, description, calories_burned, duration_minutes),
+            """
+            INSERT INTO activities (user_id, activity_type, description, calories_burned, duration_minutes)
+            VALUES (?, ?, ?, ?, ?);
+            """,
+            (user_id, activity_type, description, calories_burned, duration_minutes),
         )
         conn.commit()
         return cur.lastrowid
@@ -1001,7 +1052,7 @@ def sync_get_today_activities(user_id: int) -> list[dict[str, Any]]:
     try:
         cur = conn.execute(
             """
-            SELECT id, user_id, description, calories_burned, duration_minutes, created_at
+            SELECT id, user_id, activity_type, description, calories_burned, duration_minutes, created_at
             FROM activities
             WHERE user_id = ?
               AND date(created_at, 'localtime') = date('now', 'localtime')
@@ -1030,5 +1081,35 @@ def sync_get_activities_history(user_id: int, days: int) -> list[dict[str, Any]]
             (user_id, f"-{days} days"),
         )
         return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def sync_get_activity_by_id(activity_id: int, telegram_user_id: int) -> dict[str, Any] | None:
+    conn = _sync_connect()
+    try:
+        cur = conn.execute(
+            """
+            SELECT id, user_id, activity_type, description, calories_burned, duration_minutes, created_at
+            FROM activities
+            WHERE id = ? AND user_id = ?;
+            """,
+            (activity_id, telegram_user_id),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def sync_delete_activity(activity_id: int, telegram_user_id: int) -> bool:
+    conn = _sync_connect()
+    try:
+        cur = conn.execute(
+            "DELETE FROM activities WHERE id = ? AND user_id = ?;",
+            (activity_id, telegram_user_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
     finally:
         conn.close()

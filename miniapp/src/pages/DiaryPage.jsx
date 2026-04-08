@@ -16,8 +16,8 @@ const QUICK_ACTIVITIES = [
   { label: '🚶 Ходьба', text: 'ходьба 30 минут' },
   { label: '🚴 Велосипед', text: 'велосипед 30 минут' },
   { label: '🏃 Бег', text: 'бег 20 минут' },
-  { label: '🏋️ Зал', text: 'силовая тренировка 45 минут' },
-  { label: '🧘 Йога', text: 'йога 40 минут' },
+  { label: '🏊 Плавание', text: 'плавание 30 минут' },
+  { label: '🏋️ Зал', text: 'зал 45 минут' },
 ]
 
 export default function DiaryPage() {
@@ -30,6 +30,7 @@ export default function DiaryPage() {
   const [analysisResult, setAnalysisResult] = useState(null)
   const [activeTab, setActiveTab] = useState('food') // 'food' | 'activity'
   const [activityResult, setActivityResult] = useState(null)
+  const [activityError, setActivityError] = useState('')
   const [selectedMeal, setSelectedMeal] = useState(null)
   const [mealForm, setMealForm] = useState(null)
   const [mutationLoading, setMutationLoading] = useState(false)
@@ -57,6 +58,7 @@ export default function DiaryPage() {
   const analyzePhoto = async (file) => {
     setAnalyzing(true)
     setAnalysisResult(null)
+    setActivityError('')
     try {
       const { data } = await api.analyzePhoto(file)
       setAnalysisResult(data)
@@ -73,6 +75,7 @@ export default function DiaryPage() {
     if (!textToAnalyze) return
     setAnalyzing(true)
     setAnalysisResult(null)
+    setActivityError('')
     try {
       const { data } = await api.analyzeText(textToAnalyze)
       setAnalysisResult(data)
@@ -89,12 +92,13 @@ export default function DiaryPage() {
     if (!textToAnalyze) return
     setAnalyzing(true)
     setActivityResult(null)
+    setActivityError('')
     try {
       const { data } = await api.analyzeActivity(textToAnalyze)
       setActivityResult(data)
     } catch (e) {
       console.error('Activity analysis failed:', e)
-      setActivityResult({ description: 'Ошибка анализа', calories_burned: 0, duration_minutes: 0 })
+      setActivityError(e.response?.data?.detail || 'Не удалось разобрать активность.')
     } finally {
       setAnalyzing(false)
     }
@@ -122,14 +126,15 @@ export default function DiaryPage() {
     if (!activityResult) return
     try {
       await api.addActivity({
+        activity_type: activityResult.activity_type,
         description: activityResult.description || 'Активность',
-        calories_burned: activityResult.calories_burned || 0,
-        duration_minutes: activityResult.duration_minutes || null,
+        duration_minutes: activityResult.duration_minutes || 0,
       })
       setShowModal(false)
       resetModal()
       loadToday()
     } catch (e) {
+      setActivityError(e.response?.data?.detail || 'Не удалось сохранить активность.')
       console.error('Failed to save activity:', e)
     }
   }
@@ -139,6 +144,7 @@ export default function DiaryPage() {
     setInputValue('')
     setAnalysisResult(null)
     setActivityResult(null)
+    setActivityError('')
     setAnalyzing(false)
     setSelectedMeal(null)
     setMealForm(null)
@@ -289,6 +295,21 @@ export default function DiaryPage() {
         </div>
       </div>
 
+      <div className="balance-summary">
+        <div className="balance-summary__item">
+          <div className="balance-summary__label">Съедено</div>
+          <div className="balance-summary__value">{totalCalories.toFixed(0)} ккал</div>
+        </div>
+        <div className="balance-summary__item">
+          <div className="balance-summary__label">Сожжено</div>
+          <div className="balance-summary__value balance-summary__value--green">{totalBurned.toFixed(0)} ккал</div>
+        </div>
+        <div className="balance-summary__item">
+          <div className="balance-summary__label">Осталось</div>
+          <div className="balance-summary__value balance-summary__value--blue">{remaining.toFixed(0)} ккал</div>
+        </div>
+      </div>
+
       {/* Quick actions */}
       <div className="quick-actions">
         <div className="quick-actions__tabs">
@@ -356,10 +377,14 @@ export default function DiaryPage() {
       </div>
 
       {/* Activities list */}
-      {activities.length > 0 && (
-        <div className="activities-section">
-          <h3 className="activities-section__title">Активности</h3>
-          {activities.map((act, i) => {
+      <div className="activities-section">
+        <h3 className="activities-section__title">Активности</h3>
+        {activities.length === 0 ? (
+          <div className="meals-section__empty">
+            Активностей сегодня пока нет.
+          </div>
+        ) : (
+          activities.map((act, i) => {
             const time = act.created_at ? act.created_at.slice(11, 16) : '--:--'
             return (
               <div key={act.id || i} className="activity-card">
@@ -373,9 +398,9 @@ export default function DiaryPage() {
                 )}
               </div>
             )
-          })}
-        </div>
-      )}
+          })
+        )}
+      </div>
 
       {/* FAB */}
       <button className="fab" onClick={() => openModal('choice')}>+</button>
@@ -433,6 +458,7 @@ export default function DiaryPage() {
                 <button className="modal__analyze-btn" onClick={() => analyzeActivityText()} disabled={analyzing}>
                   {analyzing ? '⏳ Анализирую...' : 'Анализировать'}
                 </button>
+                {activityError && <div className="modal__error">{activityError}</div>}
               </div>
             )}
 
@@ -448,6 +474,10 @@ export default function DiaryPage() {
 
             {(inputMode === 'quick-food' || inputMode === 'quick-activity') && analyzing && (
               <p className="modal__loading">⏳ Анализирую...</p>
+            )}
+
+            {inputMode === 'quick-activity' && !analyzing && !activityResult && activityError && (
+              <div className="modal__error">{activityError}</div>
             )}
 
             {analysisResult && (
@@ -479,6 +509,7 @@ export default function DiaryPage() {
                     <span>⏱ {activityResult.duration_minutes} мин</span>
                   )}
                 </div>
+                {activityError && <div className="modal__error">{activityError}</div>}
                 <div className="modal__result-actions">
                   <button className="modal__cancel-btn" onClick={closeModal}>
                     Отмена

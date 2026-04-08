@@ -25,6 +25,7 @@ from database import (
     sync_update_meal,
     sync_update_user_profile,
 )
+from services.activity import ACTIVITY_METS, analyze_activity_text, build_activity_description, calculate_burned_calories
 from services.nutrition import calculate_daily_totals
 from services.nutrition_db import calculate_meal
 from services.openai_client import OpenAIClient
@@ -85,9 +86,27 @@ class TextAnalyzeRequest(BaseModel):
 
 
 class ActivityCreate(BaseModel):
-    description: str
-    calories_burned: float = 0.0
-    duration_minutes: Optional[int] = None
+    activity_type: str
+    duration_minutes: int = Field(ge=1, le=600)
+    description: Optional[str] = Field(default=None, max_length=200)
+
+    @field_validator("activity_type")
+    @classmethod
+    def validate_activity_type(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in ACTIVITY_METS:
+            raise ValueError("Неизвестный тип активности.")
+        return normalized
+
+    @field_validator("description")
+    @classmethod
+    def validate_activity_description(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Описание активности не может быть пустым.")
+        return cleaned
 
 
 # ── App setup ────────────────────────────────────────────────────
@@ -288,18 +307,34 @@ def create_activity(
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    try:
+        calories_burned = calculate_burned_calories(
+            body.activity_type,
+            db_user.get("weight_kg"),
+            body.duration_minutes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    description = body.description or build_activity_description(
+        body.activity_type,
+        body.duration_minutes,
+    )
+
     activity_id = sync_add_activity(
         user_id=telegram_id,
-        description=body.description,
-        calories_burned=body.calories_burned,
+        activity_type=body.activity_type,
+        description=description,
+        calories_burned=calories_burned,
         duration_minutes=body.duration_minutes,
     )
 
     return {
         "id": activity_id,
         "user_id": telegram_id,
-        "description": body.description,
-        "calories_burned": body.calories_burned,
+        "activity_type": body.activity_type,
+        "description": description,
+        "calories_burned": calories_burned,
         "duration_minutes": body.duration_minutes,
     }
 
@@ -332,5 +367,19 @@ async def analyze_activity(
     body: TextAnalyzeRequest,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    result = await openai_client.analyze_activity(body.text)
-    return result
+    telegram_id = user["id"]
+    db_user = sync_get_user(telegram_id)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        result = analyze_activity_text(body.text, db_user.get("weight_kg"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "activity_type": result.activity_type,
+        "description": result.description,
+        "calories_burned": result.burned_calories,
+        "duration_minutes": result.duration_minutes,
+    }
