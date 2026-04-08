@@ -41,7 +41,7 @@ router = Router(name="templates")
 # ── FSM ────────────────────────────────────────────────────────────
 
 class TemplateState(StatesGroup):
-    awaiting_name = "awaiting_name"
+    awaiting_name = State()
 
 
 # ── Helpers ────────────────────────────────────────────────────────

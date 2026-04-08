@@ -50,9 +50,13 @@ class OpenAIClient:
     def __init__(self, api_key: str | None = None) -> None:
         settings = get_settings()
         self.api_key = api_key or settings.openai_api_key
-        self.client = AsyncOpenAI(api_key=self.api_key) if AsyncOpenAI and self.api_key else None
-        self.chat_model = "gpt-4o"
-        self.vision_model = "gpt-4o"
+        self.client = (
+            AsyncOpenAI(api_key=self.api_key, timeout=30.0, max_retries=0)
+            if AsyncOpenAI and self.api_key
+            else None
+        )
+        self.chat_model = "gpt-5.4-nano"
+        self.vision_model = "gpt-5.4-nano"
         self.audio_model = "whisper-1"
 
     async def analyze_food_photo(self, image_bytes: bytes) -> dict[str, Any]:
@@ -76,7 +80,7 @@ class OpenAIClient:
                     ],
                 }
             ],
-            max_tokens=512,
+            max_completion_tokens=512,
         )
 
         raw = response.choices[0].message.content or ""
@@ -94,7 +98,7 @@ class OpenAIClient:
                 {"role": "system", "content": _STRUCTURE_PROMPT},
                 {"role": "user", "content": text.strip()},
             ],
-            max_tokens=512,
+            max_completion_tokens=512,
         )
 
         raw = response.choices[0].message.content or ""
@@ -132,7 +136,7 @@ class OpenAIClient:
                 {"role": "system", "content": _ACTIVITY_PROMPT},
                 {"role": "user", "content": text.strip()},
             ],
-            max_tokens=256,
+            max_completion_tokens=256,
         )
 
         raw = response.choices[0].message.content or ""

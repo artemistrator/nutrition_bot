@@ -3,14 +3,13 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-import sqlite3
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from auth import verify_telegram_init_data
-from config import get_settings
 from database import (
+    ensure_db_schema_sync,
     init_db,
     sync_add_activity,
     sync_add_meal,
@@ -20,7 +19,8 @@ from database import (
     sync_get_today_activities,
     sync_get_today_meals,
     sync_get_user,
-    sync_update_user_goal,
+    sync_get_user_profile,
+    sync_update_user_profile,
 )
 from services.nutrition import calculate_daily_totals
 from services.nutrition_db import calculate_meal
@@ -29,49 +29,11 @@ from services.openai_client import OpenAIClient
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_db()
     yield
 
 
-def _ensure_tables() -> None:
-    path = get_settings().database_path
-    conn = sqlite3.connect(path)
-    conn.execute("PRAGMA foreign_keys = ON;")
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS users (
-            telegram_id INTEGER PRIMARY KEY,
-            username TEXT, weight REAL, height REAL, goal_calories INTEGER,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );"""
-    )
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS meals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            description TEXT NOT NULL,
-            calories REAL NOT NULL DEFAULT 0,
-            protein REAL NOT NULL DEFAULT 0,
-            fat REAL NOT NULL DEFAULT 0,
-            carbs REAL NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
-        );"""
-    )
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS activities (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            description TEXT NOT NULL,
-            calories_burned REAL NOT NULL DEFAULT 0,
-            duration_minutes INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
-        );"""
-    )
-    conn.commit()
-    conn.close()
-
-
-_ensure_tables()
+ensure_db_schema_sync()
 
 # ── Auth dependency ──────────────────────────────────────────────
 
@@ -86,8 +48,13 @@ async def get_current_user(x_init_data: Optional[str] = Header(default=None)) ->
 
 # ── Pydantic models ──────────────────────────────────────────────
 
-class GoalUpdate(BaseModel):
-    goal_calories: int
+class ProfileUpdate(BaseModel):
+    sex: Optional[str] = None
+    age: Optional[int] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    activity_level: Optional[str] = None
+    goal_type: Optional[str] = None
 
 
 class MealCreate(BaseModel):
@@ -128,26 +95,41 @@ openai_client = OpenAIClient()
 @app.get("/profile")
 def get_profile(user: dict = Depends(get_current_user)) -> dict[str, Any]:
     telegram_id = user['id']
-    db_user = sync_get_user(telegram_id)
+    db_user = sync_get_user_profile(telegram_id)
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return db_user
 
 
-@app.post("/profile/goal")
-def update_goal(
-    body: GoalUpdate,
+@app.post("/profile")
+def update_profile(
+    body: ProfileUpdate,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
     telegram_id = user['id']
-    db_user = sync_get_user(telegram_id)
+    db_user = sync_get_user_profile(telegram_id)
     if db_user is None:
-        sync_create_user(telegram_id=telegram_id, goal_calories=body.goal_calories)
-    else:
-        sync_update_user_goal(telegram_id, body.goal_calories)
+        sync_create_user(
+            telegram_id=telegram_id,
+            username=user.get("username"),
+        )
 
-    updated = sync_get_user(telegram_id)
-    return updated  # type: ignore[return-value]
+    try:
+        updated = sync_update_user_profile(
+            telegram_id,
+            {
+                "sex": body.sex,
+                "age": body.age,
+                "height_cm": body.height_cm,
+                "weight_kg": body.weight_kg,
+                "activity_level": body.activity_level,
+                "goal_type": body.goal_type,
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return updated
 
 
 # ── Meals: today ─────────────────────────────────────────────────

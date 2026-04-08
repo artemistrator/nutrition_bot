@@ -19,6 +19,14 @@ router = Router(name="food")
 openai_client = OpenAIClient()
 
 
+def _to_bytes(blob: object) -> bytes:
+    if isinstance(blob, bytes):
+        return blob
+    if hasattr(blob, "read"):
+        return blob.read()
+    raise TypeError(f"Unsupported blob type: {type(blob)!r}")
+
+
 async def _ensure_user(message: Message) -> bool:
     if message.from_user is None:
         return False
@@ -61,12 +69,20 @@ async def handle_food_photo(message: Message, state: FSMContext) -> None:
         return
 
     progress = await message.answer("⏳ Анализирую фото...")
+    try:
+        photo = message.photo[-1]
+        file = await message.bot.get_file(photo.file_id)
+        image_file = await message.bot.download_file(file.file_path)
+        image_bytes = _to_bytes(image_file)
 
-    photo = message.photo[-1]
-    file = await message.bot.get_file(photo.file_id)
-    image_bytes = await message.bot.download_file(file.file_path)
-
-    structure = await openai_client.analyze_food_photo(image_bytes)
+        structure = await openai_client.analyze_food_photo(image_bytes)
+    except Exception:
+        logger.exception("Photo analysis failed")
+        await progress.delete()
+        await message.answer(
+            "Не удалось обработать фото. Попробуй отправить его ещё раз через пару секунд."
+        )
+        return
 
     await progress.delete()
     await _show_draft(message, state, structure, source_label="Фото")
@@ -78,29 +94,44 @@ async def handle_food_voice(message: Message, state: FSMContext) -> None:
         return
 
     progress = await message.answer("⏳ Распознаю голос...")
+    try:
+        voice = message.voice
+        file = await message.bot.get_file(voice.file_id)
+        audio_file = await message.bot.download_file(file.file_path)
+        audio_bytes = _to_bytes(audio_file)
 
-    voice = message.voice
-    file = await message.bot.get_file(voice.file_id)
-    audio_bytes = await message.bot.download_file(file.file_path)
-
-    text = await openai_client.transcribe_voice(audio_bytes)
-    structure = await openai_client.analyze_food_text(text)
+        text = await openai_client.transcribe_voice(audio_bytes)
+        structure = await openai_client.analyze_food_text(text)
+    except Exception:
+        logger.exception("Voice analysis failed")
+        await progress.delete()
+        await message.answer(
+            "Не удалось обработать голосовое. Попробуй ещё раз через пару секунд."
+        )
+        return
 
     await progress.delete()
     await _show_draft(message, state, structure, source_label="Голос")
 
 
-@router.message(F.text)
+@router.message(F.text & ~F.text.startswith("/"))
 async def handle_food_text(message: Message, state: FSMContext) -> None:
+    if not message.text:
+        return
+
     if not await _ensure_user(message):
         return
 
-    if not message.text or message.text.startswith("/"):
-        return
-
     progress = await message.answer("⏳ Анализирую текст...")
-
-    structure = await openai_client.analyze_food_text(message.text)
+    try:
+        structure = await openai_client.analyze_food_text(message.text)
+    except Exception:
+        logger.exception("Text analysis failed")
+        await progress.delete()
+        await message.answer(
+            "Не удалось обработать запрос к OpenAI. Попробуй ещё раз через пару секунд."
+        )
+        return
 
     await progress.delete()
     await _show_draft(message, state, structure, source_label="Текст")

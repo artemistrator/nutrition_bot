@@ -10,10 +10,14 @@ import './App.css'
 export default function App() {
   const [activePage, setActivePage] = useState('diary')
   const [appState, setAppState] = useState('loading') // 'loading' | 'onboarding' | 'app'
+  const [initialProfile, setInitialProfile] = useState(null)
 
   useEffect(() => {
     api.getProfile()
-      .then(() => setAppState('app'))
+      .then(({ data }) => {
+        setInitialProfile(data)
+        setAppState(data.profile_complete ? 'app' : 'onboarding')
+      })
       .catch(err => {
         // 404 — юзер не создан, показываем онбординг
         if (err.response?.status === 404) {
@@ -26,7 +30,9 @@ export default function App() {
       })
   }, [])
 
-  const handleOnboardingComplete = () => {
+  const handleOnboardingComplete = (profile) => {
+    setInitialProfile(profile)
+    setActivePage('profile')
     setAppState('app')
   }
 
@@ -35,7 +41,7 @@ export default function App() {
   }
 
   if (appState === 'onboarding') {
-    return <OnboardingPage onComplete={handleOnboardingComplete} />
+    return <OnboardingPage profile={initialProfile} onComplete={handleOnboardingComplete} />
   }
 
   return (

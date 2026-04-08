@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const BASE = 'http://localhost:8001'
+const BASE = '/api'
 
 function getInitData() {
   if (window.Telegram?.WebApp?.initData) {
@@ -18,7 +18,7 @@ client.interceptors.request.use(config => {
 
 export const api = {
   getProfile: () => client.get('/profile'),
-  setGoal: (calories) => client.post('/profile/goal', {goal_calories: calories}),
+  updateProfile: (profile) => client.post('/profile', profile),
   getTodayMeals: () => client.get('/meals/today'),
   addMeal: (meal) => client.post('/meals', meal),
   getHistory: (days=7) => client.get(`/meals/history?days=${days}`),

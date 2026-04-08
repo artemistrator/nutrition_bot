@@ -155,7 +155,7 @@ export default function DiaryPage() {
     analyzeActivityText(text)
   }
 
-  const goal = todayData?.goal_calories || 2000
+  const goal = todayData?.goal_calories || 0
   const totalCalories = todayData?.totals?.calories || 0
   const totalBurned = todayData?.total_burned || 0
   const netCalories = todayData?.net_calories ?? totalCalories
@@ -185,7 +185,7 @@ export default function DiaryPage() {
           </svg>
           <div className="calorie-ring__text">
             <div className="calorie-ring__value">{netCalories.toFixed(0)}</div>
-            <div className="calorie-ring__goal">/ {goal} ккал</div>
+            <div className="calorie-ring__goal">{goal ? `/ ${goal} ккал` : 'цель не задана'}</div>
           </div>
         </div>
         <div className="calorie-ring__macros">
@@ -198,7 +198,9 @@ export default function DiaryPage() {
             🏃 Сожжено: {totalBurned.toFixed(0)} ккал
           </div>
         )}
-        <div className="calorie-ring__remaining">Осталось: {remaining.toFixed(0)} ккал</div>
+        <div className="calorie-ring__remaining">
+          {goal ? `Осталось: ${remaining.toFixed(0)} ккал` : 'Заполни профиль, чтобы увидеть цель'}
+        </div>
       </div>
 
       {/* Quick actions */}

@@ -7,8 +7,158 @@ from typing import Any
 import aiosqlite
 
 from config import get_settings
+from services.profile import build_profile_meta, calculate_goal_calories, is_profile_complete, sanitize_profile_input
 
 _DB: aiosqlite.Connection | None = None
+
+_USER_SELECT = """
+    SELECT
+        telegram_id,
+        username,
+        sex,
+        age,
+        height_cm,
+        weight_kg,
+        activity_level,
+        goal_type,
+        goal_calories,
+        updated_at,
+        created_at
+    FROM users
+"""
+
+
+def _now_timestamp() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+async def _ensure_schema_async(conn: aiosqlite.Connection) -> None:
+    await conn.execute("PRAGMA foreign_keys = ON;")
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            telegram_id INTEGER PRIMARY KEY,
+            username TEXT,
+            weight REAL,
+            height REAL,
+            goal_calories INTEGER,
+            sex TEXT,
+            age INTEGER,
+            height_cm REAL,
+            weight_kg REAL,
+            activity_level TEXT,
+            goal_type TEXT,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+    cursor = await conn.execute("PRAGMA table_info(users);")
+    columns = {row["name"] for row in await cursor.fetchall()}
+    for statement in _missing_user_column_statements(columns):
+        await conn.execute(statement)
+
+    await conn.execute(
+        """
+        UPDATE users
+        SET
+            weight_kg = COALESCE(weight_kg, weight),
+            height_cm = COALESCE(height_cm, height),
+            updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)
+        ;
+        """
+    )
+
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS meals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            description TEXT NOT NULL,
+            calories REAL NOT NULL DEFAULT 0,
+            protein REAL NOT NULL DEFAULT 0,
+            fat REAL NOT NULL DEFAULT 0,
+            carbs REAL NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
+        );
+        """
+    )
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS activities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            description TEXT NOT NULL,
+            calories_burned REAL NOT NULL DEFAULT 0,
+            duration_minutes INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
+        );
+        """
+    )
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS meal_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            structure_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (telegram_user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
+        );
+        """
+    )
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notification_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_user_id INTEGER NOT NULL,
+            notif_type TEXT NOT NULL,
+            sent_date TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (telegram_user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
+        );
+        """
+    )
+    await conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_profile_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_user_id INTEGER NOT NULL,
+            sex TEXT,
+            age INTEGER,
+            height_cm REAL,
+            weight_kg REAL,
+            activity_level TEXT,
+            goal_type TEXT,
+            goal_calories INTEGER,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (telegram_user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
+        );
+        """
+    )
+    await conn.commit()
+
+
+def _missing_user_column_statements(columns: set[str]) -> list[str]:
+    statements: list[str] = []
+    required = {
+        "sex": "ALTER TABLE users ADD COLUMN sex TEXT;",
+        "age": "ALTER TABLE users ADD COLUMN age INTEGER;",
+        "height_cm": "ALTER TABLE users ADD COLUMN height_cm REAL;",
+        "weight_kg": "ALTER TABLE users ADD COLUMN weight_kg REAL;",
+        "activity_level": "ALTER TABLE users ADD COLUMN activity_level TEXT;",
+        "goal_type": "ALTER TABLE users ADD COLUMN goal_type TEXT;",
+        "updated_at": "ALTER TABLE users ADD COLUMN updated_at TEXT DEFAULT CURRENT_TIMESTAMP;",
+        "weight": "ALTER TABLE users ADD COLUMN weight REAL;",
+        "height": "ALTER TABLE users ADD COLUMN height REAL;",
+    }
+    for column, statement in required.items():
+        if column not in columns:
+            statements.append(statement)
+    return statements
 
 
 async def _db() -> aiosqlite.Connection:
@@ -17,106 +167,34 @@ async def _db() -> aiosqlite.Connection:
         path = get_settings().database_path
         _DB = await aiosqlite.connect(path)
         _DB.row_factory = aiosqlite.Row
-        await _DB.execute("PRAGMA foreign_keys = ON;")
-        await _DB.commit()
+        await _ensure_schema_async(_DB)
     return _DB
 
 
 async def init_db(db_path: str | Path | None = None) -> None:
     path = Path(db_path or get_settings().database_path)
     async with aiosqlite.connect(path) as conn:
-        await conn.execute("PRAGMA foreign_keys = ON;")
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                telegram_id INTEGER PRIMARY KEY,
-                username TEXT,
-                weight REAL,
-                height REAL,
-                goal_calories INTEGER,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-            """
-        )
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS meals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                description TEXT NOT NULL,
-                calories REAL NOT NULL DEFAULT 0,
-                protein REAL NOT NULL DEFAULT 0,
-                fat REAL NOT NULL DEFAULT 0,
-                carbs REAL NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
-            );
-            """
-        )
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS activities (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                description TEXT NOT NULL,
-                calories_burned REAL NOT NULL DEFAULT 0,
-                duration_minutes INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
-            );
-            """
-        )
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS meal_templates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_user_id INTEGER NOT NULL,
-                title TEXT NOT NULL,
-                structure_json TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (telegram_user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
-            );
-            """
-        )
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS notification_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_user_id INTEGER NOT NULL,
-                notif_type TEXT NOT NULL,
-                sent_date TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (telegram_user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
-            );
-            """
-        )
-        await conn.commit()
+        conn.row_factory = aiosqlite.Row
+        await _ensure_schema_async(conn)
 
 
 async def get_user(telegram_id: int) -> dict[str, Any] | None:
     db = await _db()
     cursor = await db.execute(
-        """
-        SELECT telegram_id, username, weight, height, goal_calories, created_at
-        FROM users
-        WHERE telegram_id = ?;
-        """,
+        f"{_USER_SELECT} WHERE telegram_id = ?;",
         (telegram_id,),
     )
     row = await cursor.fetchone()
-    return dict(row) if row else None
+    return build_profile_meta(dict(row)) if row else None
 
 
 async def get_all_users() -> list[dict[str, Any]]:
     db = await _db()
     cursor = await db.execute(
-        """
-        SELECT telegram_id, username, weight, height, goal_calories, created_at
-        FROM users;
-        """,
+        f"{_USER_SELECT};",
     )
     rows = await cursor.fetchall()
-    return [dict(row) for row in rows]
+    return [build_profile_meta(dict(row)) for row in rows]
 
 
 async def create_user(
@@ -130,11 +208,11 @@ async def create_user(
     await db.execute(
         """
         INSERT OR IGNORE INTO users (
-            telegram_id, username, weight, height, goal_calories
+            telegram_id, username, weight, height, weight_kg, height_cm, goal_calories, updated_at
         )
-        VALUES (?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
         """,
-        (telegram_id, username, weight, height, goal_calories),
+        (telegram_id, username, weight, height, weight, height, goal_calories, _now_timestamp()),
     )
     await db.commit()
     user = await get_user(telegram_id)
@@ -146,10 +224,95 @@ async def create_user(
 async def update_user_goal(telegram_id: int, goal_calories: int) -> None:
     db = await _db()
     await db.execute(
-        "UPDATE users SET goal_calories = ? WHERE telegram_id = ?;",
-        (goal_calories, telegram_id),
+        "UPDATE users SET goal_calories = ?, updated_at = ? WHERE telegram_id = ?;",
+        (goal_calories, _now_timestamp(), telegram_id),
     )
     await db.commit()
+
+
+async def get_user_profile(telegram_id: int) -> dict[str, Any] | None:
+    return await get_user(telegram_id)
+
+
+async def update_user_profile(telegram_id: int, profile_data: dict[str, Any]) -> dict[str, Any]:
+    db = await _db()
+    existing = await get_user(telegram_id)
+    if existing is None:
+        raise ValueError("User not found.")
+
+    cleaned = sanitize_profile_input(profile_data, partial=True)
+    merged = {**existing, **cleaned}
+    goal_calories = merged.get("goal_calories")
+    if is_profile_complete(merged):
+        goal_calories = calculate_goal_calories(merged)
+
+    merged["goal_calories"] = goal_calories
+    merged["updated_at"] = _now_timestamp()
+
+    await db.execute(
+        """
+        UPDATE users
+        SET
+            username = COALESCE(?, username),
+            sex = ?,
+            age = ?,
+            height_cm = ?,
+            weight_kg = ?,
+            activity_level = ?,
+            goal_type = ?,
+            goal_calories = ?,
+            weight = ?,
+            height = ?,
+            updated_at = ?
+        WHERE telegram_id = ?;
+        """,
+        (
+            merged.get("username"),
+            merged.get("sex"),
+            merged.get("age"),
+            merged.get("height_cm"),
+            merged.get("weight_kg"),
+            merged.get("activity_level"),
+            merged.get("goal_type"),
+            merged.get("goal_calories"),
+            merged.get("weight_kg"),
+            merged.get("height_cm"),
+            merged.get("updated_at"),
+            telegram_id,
+        ),
+    )
+    await db.execute(
+        """
+        INSERT INTO user_profile_history (
+            telegram_user_id,
+            sex,
+            age,
+            height_cm,
+            weight_kg,
+            activity_level,
+            goal_type,
+            goal_calories,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """,
+        (
+            telegram_id,
+            merged.get("sex"),
+            merged.get("age"),
+            merged.get("height_cm"),
+            merged.get("weight_kg"),
+            merged.get("activity_level"),
+            merged.get("goal_type"),
+            merged.get("goal_calories"),
+            merged.get("updated_at"),
+        ),
+    )
+    await db.commit()
+    user = await get_user(telegram_id)
+    if user is None:
+        raise RuntimeError("Failed to update profile.")
+    return user
 
 
 async def add_meal(
@@ -385,6 +548,115 @@ async def log_notification(user_id: int, notif_type: str) -> None:
 import sqlite3
 
 
+def ensure_db_schema_sync(db_path: str | Path | None = None) -> None:
+    conn = _sync_connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                telegram_id INTEGER PRIMARY KEY,
+                username TEXT,
+                weight REAL,
+                height REAL,
+                goal_calories INTEGER,
+                sex TEXT,
+                age INTEGER,
+                height_cm REAL,
+                weight_kg REAL,
+                activity_level TEXT,
+                goal_type TEXT,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(users);").fetchall()}
+        for statement in _missing_user_column_statements(columns):
+            conn.execute(statement)
+        conn.execute(
+            """
+            UPDATE users
+            SET
+                weight_kg = COALESCE(weight_kg, weight),
+                height_cm = COALESCE(height_cm, height),
+                updated_at = COALESCE(updated_at, created_at, CURRENT_TIMESTAMP)
+            ;
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS meals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                description TEXT NOT NULL,
+                calories REAL NOT NULL DEFAULT 0,
+                protein REAL NOT NULL DEFAULT 0,
+                fat REAL NOT NULL DEFAULT 0,
+                carbs REAL NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS activities (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                description TEXT NOT NULL,
+                calories_burned REAL NOT NULL DEFAULT 0,
+                duration_minutes INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS meal_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegram_user_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                structure_json TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (telegram_user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notification_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegram_user_id INTEGER NOT NULL,
+                notif_type TEXT NOT NULL,
+                sent_date TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (telegram_user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_profile_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegram_user_id INTEGER NOT NULL,
+                sex TEXT,
+                age INTEGER,
+                height_cm REAL,
+                weight_kg REAL,
+                activity_level TEXT,
+                goal_type TEXT,
+                goal_calories INTEGER,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (telegram_user_id) REFERENCES users (telegram_id) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _sync_connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     path = Path(db_path or get_settings().database_path)
     conn = sqlite3.connect(path)
@@ -396,12 +668,9 @@ def _sync_connect(db_path: str | Path | None = None) -> sqlite3.Connection:
 def sync_get_user(telegram_id: int) -> dict[str, Any] | None:
     conn = _sync_connect()
     try:
-        cur = conn.execute(
-            "SELECT telegram_id, username, weight, height, goal_calories, created_at FROM users WHERE telegram_id = ?;",
-            (telegram_id,),
-        )
+        cur = conn.execute(f"{_USER_SELECT} WHERE telegram_id = ?;", (telegram_id,))
         row = cur.fetchone()
-        return dict(row) if row else None
+        return build_profile_meta(dict(row)) if row else None
     finally:
         conn.close()
 
@@ -410,8 +679,8 @@ def sync_update_user_goal(telegram_id: int, goal_calories: int) -> None:
     conn = _sync_connect()
     try:
         conn.execute(
-            "UPDATE users SET goal_calories = ? WHERE telegram_id = ?;",
-            (goal_calories, telegram_id),
+            "UPDATE users SET goal_calories = ?, updated_at = ? WHERE telegram_id = ?;",
+            (goal_calories, _now_timestamp(), telegram_id),
         )
         conn.commit()
     finally:
@@ -428,8 +697,20 @@ def sync_create_user(
     conn = _sync_connect()
     try:
         conn.execute(
-            "INSERT OR IGNORE INTO users (telegram_id, username, weight, height, goal_calories) VALUES (?, ?, ?, ?, ?);",
-            (telegram_id, username, weight, height, goal_calories),
+            """
+            INSERT OR IGNORE INTO users (
+                telegram_id,
+                username,
+                weight,
+                height,
+                weight_kg,
+                height_cm,
+                goal_calories,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (telegram_id, username, weight, height, weight, height, goal_calories, _now_timestamp()),
         )
         conn.commit()
     finally:
@@ -437,6 +718,97 @@ def sync_create_user(
     user = sync_get_user(telegram_id)
     if user is None:
         raise RuntimeError("Failed to create user.")
+    return user
+
+
+def sync_get_user_profile(telegram_id: int) -> dict[str, Any] | None:
+    return sync_get_user(telegram_id)
+
+
+def sync_update_user_profile(telegram_id: int, profile_data: dict[str, Any]) -> dict[str, Any]:
+    conn = _sync_connect()
+    try:
+        cur = conn.execute(f"{_USER_SELECT} WHERE telegram_id = ?;", (telegram_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise ValueError("User not found.")
+
+        existing = build_profile_meta(dict(row))
+        cleaned = sanitize_profile_input(profile_data, partial=True)
+        merged = {**existing, **cleaned}
+        goal_calories = merged.get("goal_calories")
+        if is_profile_complete(merged):
+            goal_calories = calculate_goal_calories(merged)
+
+        merged["goal_calories"] = goal_calories
+        merged["updated_at"] = _now_timestamp()
+
+        conn.execute(
+            """
+            UPDATE users
+            SET
+                username = COALESCE(?, username),
+                sex = ?,
+                age = ?,
+                height_cm = ?,
+                weight_kg = ?,
+                activity_level = ?,
+                goal_type = ?,
+                goal_calories = ?,
+                weight = ?,
+                height = ?,
+                updated_at = ?
+            WHERE telegram_id = ?;
+            """,
+            (
+                merged.get("username"),
+                merged.get("sex"),
+                merged.get("age"),
+                merged.get("height_cm"),
+                merged.get("weight_kg"),
+                merged.get("activity_level"),
+                merged.get("goal_type"),
+                merged.get("goal_calories"),
+                merged.get("weight_kg"),
+                merged.get("height_cm"),
+                merged.get("updated_at"),
+                telegram_id,
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO user_profile_history (
+                telegram_user_id,
+                sex,
+                age,
+                height_cm,
+                weight_kg,
+                activity_level,
+                goal_type,
+                goal_calories,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                telegram_id,
+                merged.get("sex"),
+                merged.get("age"),
+                merged.get("height_cm"),
+                merged.get("weight_kg"),
+                merged.get("activity_level"),
+                merged.get("goal_type"),
+                merged.get("goal_calories"),
+                merged.get("updated_at"),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    user = sync_get_user(telegram_id)
+    if user is None:
+        raise RuntimeError("Failed to update profile.")
     return user
 
 

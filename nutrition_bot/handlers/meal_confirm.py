@@ -8,6 +8,7 @@ Router с высоким приоритом (регистрируется ПЕР
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -28,8 +29,8 @@ router = Router(name="meal_confirm")
 # ── FSM states ────────────────────────────────────────────────────
 
 class MealConfirmState(StatesGroup):
-    awaiting_confirmation = "awaiting_confirmation"
-    awaiting_edit = "awaiting_edit"
+    awaiting_confirmation = State()
+    awaiting_edit = State()
 
 
 # ── Draft storage key ─────────────────────────────────────────────
@@ -94,53 +95,144 @@ def _format_meal_preview(structure: dict, meal_calc: dict) -> str:
 
 @dataclass
 class EditCommand:
-    action: str  # "set" | "remove" | "add"
+    action: str  # "upsert" | "remove" | "add"
     name: str
     grams: Optional[float] = None
 
 
-def parse_edit_command(text: str) -> Optional[EditCommand]:
+_GRAMS_PATTERN = re.compile(
+    r"^(?P<name>.+?)"
+    r"(?:\s*(?:=|-)\s*|\s+)"
+    r"(?P<grams>\d+(?:[.,]\d+)?)"
+    r"\s*(?:г|гр|грамм|грамма|граммов)?\s*$",
+    re.IGNORECASE,
+)
+_DELETE_PATTERN = re.compile(r"^(?:удали|delete)\s+(.+)$", re.IGNORECASE)
+_SPACE_PATTERN = re.compile(r"\s+")
+
+
+def _edit_examples() -> str:
+    return (
+        "Примеры:\n"
+        "• `булочки 60`\n"
+        "• `булочки = 60`\n"
+        "• `- хлеб`\n"
+        "• `+ яблоко 120`"
+    )
+
+
+def _edit_parse_error(reason: Optional[str] = None) -> str:
+    lines = ["Не получилось разобрать правку."]
+    if reason:
+        lines.append(reason)
+    lines.append("")
+    lines.append(_edit_examples())
+    return "\n".join(lines)
+
+
+def _normalize_edit_input(text: str) -> str:
+    text = text.strip()
+    text = text.replace("\u00A0", " ")
+    for old, new in {
+        "—": "-",
+        "–": "-",
+        "−": "-",
+        "«": "",
+        "»": "",
+        "“": "",
+        "”": "",
+    }.items():
+        text = text.replace(old, new)
+    return _SPACE_PATTERN.sub(" ", text).strip()
+
+
+def _name_key(text: str) -> str:
+    text = _normalize_edit_input(text).casefold().replace("-", " ")
+    text = re.sub(r"[^\w]+", " ", text, flags=re.UNICODE)
+    return _SPACE_PATTERN.sub(" ", text).strip()
+
+
+def _find_exact_item_matches(items: list[dict[str, Any]], name: str) -> list[dict[str, Any]]:
+    query_key = _name_key(name)
+    if not query_key:
+        return []
+    return [item for item in items if _name_key(item.get("name", "")) == query_key]
+
+
+def _find_item_matches(items: list[dict[str, Any]], name: str) -> list[dict[str, Any]]:
+    query_key = _name_key(name)
+    if not query_key:
+        return []
+
+    exact_matches = _find_exact_item_matches(items, name)
+    if exact_matches:
+        return exact_matches
+
+    matches = []
+    for item in items:
+        item_key = _name_key(item.get("name", ""))
+        if query_key and (query_key in item_key or item_key in query_key):
+            matches.append(item)
+    return matches
+
+
+def _format_ambiguous_matches(matches: list[dict[str, Any]]) -> str:
+    names = [f"«{item.get('name', '?')}»" for item in matches[:5]]
+    suffix = "..." if len(matches) > 5 else ""
+    return f"Нашёл несколько похожих продуктов: {', '.join(names)}{suffix}. Уточни название."
+
+
+def parse_edit_command(text: str) -> tuple[Optional[EditCommand], Optional[str]]:
     """Парсит команду редактирования.
 
     Поддерживаемые форматы:
-    - борщ=300       → set
-    - -хлеб           → remove
-    - +яблоко=120     → add
-    - хлеб             → set (без знака = не парсим, просим формат)
+    - борщ=300 / борщ 300 / борщ - 300 / борщ — 300 г
+    - -хлеб / - хлеб / удали хлеб / delete хлеб
+    - +яблоко=120 / + яблоко 120
+    - яблоко=120 / яблоко 120 → upsert
     """
-    text = text.strip()
+    text = _normalize_edit_input(text)
+    if not text:
+        return None, _edit_parse_error("Сообщение пустое.")
 
-    # Удаление: -название
+    # Удаление: -название / удали название / delete название
+    delete_match = _DELETE_PATTERN.match(text)
+    if delete_match:
+        name = delete_match.group(1).strip()
+        if name:
+            return EditCommand(action="remove", name=name), None
+        return None, _edit_parse_error("Не вижу название продукта для удаления.")
+
     if text.startswith("-"):
         name = text[1:].strip()
         if name:
-            return EditCommand(action="remove", name=name)
-        return None
+            return EditCommand(action="remove", name=name), None
+        return None, _edit_parse_error("Не вижу название продукта для удаления.")
 
-    # Добавление: +название=граммы
+    # Добавление: +название=граммы / + название 120
+    action = "upsert"
     if text.startswith("+"):
-        rest = text[1:].strip()
-        if "=" in rest:
-            parts = rest.split("=", 1)
-            name = parts[0].strip()
-            try:
-                grams = float(parts[1].strip())
-            except ValueError:
-                return None
-            return EditCommand(action="add", name=name, grams=grams)
-        return None
+        action = "add"
+        text = text[1:].strip()
+        if not text:
+            return None, _edit_parse_error("После `+` укажи продукт и граммы.")
 
-    # Изменение: название=граммы
-    if "=" in text:
-        parts = text.split("=", 1)
-        name = parts[0].strip()
-        try:
-            grams = float(parts[1].strip())
-        except ValueError:
-            return None
-        return EditCommand(action="set", name=name, grams=grams)
+    match = _GRAMS_PATTERN.match(text)
+    if match:
+        name = match.group("name").strip(" -")
+        grams_raw = match.group("grams").replace(",", ".")
+        if not name:
+            return None, _edit_parse_error("Не вижу название продукта.")
 
-    return None
+        grams = float(grams_raw)
+        if grams <= 0:
+            return None, _edit_parse_error("Граммы должны быть больше нуля.")
+        return EditCommand(action=action, name=name, grams=grams), None
+
+    if re.search(r"\d", text) is None:
+        return None, _edit_parse_error("Нужно указать граммы.")
+
+    return None, _edit_parse_error()
 
 
 def apply_meal_edit(structure: dict, edit_text: str) -> tuple[dict, Optional[str]]:
@@ -149,40 +241,49 @@ def apply_meal_edit(structure: dict, edit_text: str) -> tuple[dict, Optional[str
     Returns:
         (updated_structure, error_message_or_None)
     """
-    cmd = parse_edit_command(edit_text)
+    cmd, parse_error = parse_edit_command(edit_text)
     if cmd is None:
-        return structure, (
-            "Не понял формат. Используй:\n"
-            "• `борщ=300` — изменить граммы\n"
-            "• `-хлеб` — удалить продукт\n"
-            "• `+яблоко=120` — добавить продукт"
-        )
+        return structure, parse_error or _edit_parse_error()
 
     items: list[dict[str, Any]] = structure.get("items", [])
 
     if cmd.action == "remove":
-        new_items = []
-        removed = False
-        for item in items:
-            if cmd.name.lower() in item.get("name", "").lower():
-                removed = True
-            else:
-                new_items.append(item)
-        if not removed:
+        matches = _find_item_matches(items, cmd.name)
+        if not matches:
             return structure, f"Продукт «{cmd.name}» не найден в списке."
+        if len(matches) > 1:
+            return structure, _format_ambiguous_matches(matches)
+
+        target = matches[0]
+        new_items = [item for item in items if item is not target]
         structure = {**structure, "items": new_items}
 
-    elif cmd.action == "set":
-        found = False
-        for item in items:
-            if cmd.name.lower() in item.get("name", "").lower():
-                item["grams"] = cmd.grams
-                item["source"] = item.get("source", "llm")  # сохраняем источник
-                found = True
-        if not found:
-            return structure, f"Продукт «{cmd.name}» не найден. Используй +{cmd.name}={cmd.grams:.0f} чтобы добавить."
+    elif cmd.action == "upsert":
+        matches = _find_item_matches(items, cmd.name)
+        if len(matches) > 1:
+            return structure, _format_ambiguous_matches(matches)
+
+        if matches:
+            target = matches[0]
+            target["grams"] = cmd.grams
+            target["source"] = target.get("source", "llm")
+        else:
+            items.append({
+                "name": cmd.name,
+                "grams": cmd.grams,
+                "confidence": 1.0,
+                "source": "manual",
+            })
+            structure = {**structure, "items": items}
 
     elif cmd.action == "add":
+        exact_matches = _find_exact_item_matches(items, cmd.name)
+        if exact_matches:
+            return structure, (
+                f"Продукт «{exact_matches[0].get('name', cmd.name)}» уже есть в списке. "
+                "Напиши без `+`, чтобы изменить граммы."
+            )
+
         items.append({
             "name": cmd.name,
             "grams": cmd.grams,
@@ -261,15 +362,13 @@ async def handle_edit(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     if callback.message is not None:
         await callback.message.answer(
-            "✏️ Отправь исправление в формате:\n\n"
-            "• `борщ=300` — изменить граммы\n"
-            "• `-хлеб` — удалить продукт\n"
-            "• `+яблоко=120` — добавить продукт\n\n"
-            "Или нажми ❌ Отмена чтобы начать заново."
+            "Исправь еду одной строкой.\n\n"
+            f"{_edit_examples()}\n\n"
+            "Можно писать просто и по-человечески."
         )
 
 
-@router.message(MealConfirmState.awaiting_edit)
+@router.message(MealConfirmState.awaiting_edit, F.text)
 async def handle_edit_text(message: Message, state: FSMContext) -> None:
     if message.from_user is None or message.text is None:
         return
@@ -306,5 +405,5 @@ async def handle_edit_text(message: Message, state: FSMContext) -> None:
 async def handle_edit_other(message: Message, state: FSMContext) -> None:
     await message.answer(
         "Сейчас я жду текст с правкой.\n"
-        "Например: `борщ=300` или `-хлеб` или `+яблоко=120`"
+        f"{_edit_examples()}"
     )
