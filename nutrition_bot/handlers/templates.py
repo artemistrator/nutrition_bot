@@ -219,7 +219,7 @@ async def handle_save_template_request(callback: CallbackQuery, state: FSMContex
     await callback.answer()
 
 
-@router.message(TemplateState.awaiting_name)
+@router.message(TemplateState.awaiting_name, F.text)
 async def handle_template_name(message: Message, state: FSMContext) -> None:
     if message.from_user is None or message.text is None:
         return
@@ -257,3 +257,8 @@ async def handle_template_name(message: Message, state: FSMContext) -> None:
         parse_mode="Markdown",
     )
     logger.info(f"Template created: {name} (id={template_id})")
+
+
+@router.message(TemplateState.awaiting_name)
+async def handle_template_name_unexpected(message: Message) -> None:
+    await message.answer("Отправь название шаблона обычным текстом. Например: `Мой завтрак`.", parse_mode="Markdown")

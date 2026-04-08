@@ -5,6 +5,7 @@ food.py — анализ еды (текст / фото / голос).
 
 import logging
 from aiogram import F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
@@ -63,7 +64,7 @@ async def _show_draft(
     logger.info(f"Draft saved: {source_label}, {len(structure.get('items', []))} items")
 
 
-@router.message(F.photo)
+@router.message(StateFilter(None), F.photo)
 async def handle_food_photo(message: Message, state: FSMContext) -> None:
     if not await _ensure_user(message):
         return
@@ -88,7 +89,7 @@ async def handle_food_photo(message: Message, state: FSMContext) -> None:
     await _show_draft(message, state, structure, source_label="Фото")
 
 
-@router.message(F.voice)
+@router.message(StateFilter(None), F.voice)
 async def handle_food_voice(message: Message, state: FSMContext) -> None:
     if not await _ensure_user(message):
         return
@@ -114,7 +115,7 @@ async def handle_food_voice(message: Message, state: FSMContext) -> None:
     await _show_draft(message, state, structure, source_label="Голос")
 
 
-@router.message(F.text & ~F.text.startswith("/"))
+@router.message(StateFilter(None), F.text & ~F.text.startswith("/"))
 async def handle_food_text(message: Message, state: FSMContext) -> None:
     if not message.text:
         return

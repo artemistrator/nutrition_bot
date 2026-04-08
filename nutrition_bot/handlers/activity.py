@@ -80,3 +80,8 @@ async def activity_command(message: Message, state: FSMContext) -> None:
 @router.message(ActivityState.waiting_for_entry, F.text & ~F.text.startswith("/"))
 async def handle_activity_entry(message: Message, state: FSMContext) -> None:
     await _save_activity_from_text(message, state, message.text or "")
+
+
+@router.message(ActivityState.waiting_for_entry)
+async def handle_activity_unexpected(message: Message) -> None:
+    await message.answer("Опиши активность текстом, например: `бег 30 минут`.", parse_mode="Markdown")

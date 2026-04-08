@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -207,6 +209,18 @@ async def _save_profile_update(message: Message, payload: dict) -> dict | None:
     return user
 
 
+def _onboarding_help_text(state_name: str | None) -> str:
+    prompts = {
+        OnboardingState.waiting_for_sex.state: "Выбери пол кнопкой ниже.",
+        OnboardingState.waiting_for_age.state: "Напиши возраст числом от 10 до 100.",
+        OnboardingState.waiting_for_height.state: "Напиши рост в сантиметрах, например `178`.",
+        OnboardingState.waiting_for_weight.state: "Напиши вес в килограммах, например `72` или `72.5`.",
+        OnboardingState.waiting_for_activity.state: "Выбери уровень активности кнопкой ниже.",
+        OnboardingState.waiting_for_goal.state: "Выбери цель кнопкой ниже.",
+    }
+    return prompts.get(state_name, "Продолжим заполнение профиля. Следуй подсказке выше.")
+
+
 @router.message(CommandStart())
 async def start_command(message: Message, state: FSMContext) -> None:
     user = await _ensure_user(message)
@@ -241,6 +255,17 @@ async def profile_command(message: Message, state: FSMContext) -> None:
     if not user.get("profile_complete"):
         await message.answer("Профиль заполнен не до конца. Давай закончим настройку.")
         await _ask_next_profile_step(message, state, user)
+
+
+@router.message(Command("cancel"))
+async def cancel_command(message: Message, state: FSMContext) -> None:
+    current_state = await state.get_state()
+    if not current_state:
+        await message.answer("Сейчас нечего отменять.")
+        return
+
+    await state.clear()
+    await message.answer("Текущее действие отменено. Теперь можно снова отправлять еду или использовать команды.")
 
 
 @router.callback_query(F.data == "profile:edit")
@@ -330,3 +355,16 @@ async def handle_weight(message: Message, state: FSMContext) -> None:
 @router.message(OnboardingState.waiting_for_goal, F.text)
 async def handle_choice_text(message: Message) -> None:
     await message.answer("Выбери вариант кнопкой ниже, чтобы я не ошибся.")
+
+
+@router.message(
+    OnboardingState.waiting_for_sex,
+    OnboardingState.waiting_for_age,
+    OnboardingState.waiting_for_height,
+    OnboardingState.waiting_for_weight,
+    OnboardingState.waiting_for_activity,
+    OnboardingState.waiting_for_goal,
+)
+async def handle_onboarding_unexpected_input(message: Message, state: FSMContext) -> None:
+    current_state = await state.get_state()
+    await message.answer(_onboarding_help_text(current_state), parse_mode="Markdown")
