@@ -284,6 +284,42 @@
   color: #6b7280;
 }
 
+.meal-card__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.meal-card__action-btn {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.meal-card__action-btn:active {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.meal-card__action-btn--danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.meal-card__action-btn--danger:active {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
 /* FAB */
 .fab {
   position: fixed;
@@ -380,6 +416,47 @@
   border-color: #3b82f6;
 }
 
+.modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  color: #4b5563;
+  text-align: left;
+}
+
+.modal__field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.modal__input {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 15px;
+  font-family: inherit;
+  box-sizing: border-box;
+  color: #111827;
+  background: #fff;
+}
+
+.modal__input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.modal__error {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 14px;
+  text-align: left;
+}
+
 .modal__analyze-btn,
 .modal__photo-btn {
   padding: 14px;
@@ -453,8 +530,42 @@
   color: #fff;
 }
 
+.modal__save-btn:disabled,
+.modal__cancel-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
 .modal__save-btn--green {
   background: #22c55e;
+}
+
+.modal__save-btn--danger {
+  background: #dc2626;
+}
+
+.modal__delete {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal__delete-text {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+  text-align: center;
+}
+
+.modal__delete-subtext {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: #f9fafb;
+  color: #4b5563;
+  font-size: 14px;
+  text-align: center;
 }
 
 .modal__back-btn {
@@ -467,4 +578,10 @@
   width: 100%;
   text-align: center;
   padding: 10px;
+}
+
+@media (max-width: 420px) {
+  .modal__field-grid {
+    grid-template-columns: 1fr;
+  }
 }

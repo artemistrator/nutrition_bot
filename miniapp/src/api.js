@@ -21,6 +21,8 @@ export const api = {
   updateProfile: (profile) => client.post('/profile', profile),
   getTodayMeals: () => client.get('/meals/today'),
   addMeal: (meal) => client.post('/meals', meal),
+  updateMeal: (mealId, meal) => client.put(`/meals/${mealId}`, meal),
+  deleteMeal: (mealId) => client.delete(`/meals/${mealId}`),
   getHistory: (days=7) => client.get(`/meals/history?days=${days}`),
   analyzeText: (text) => client.post('/analyze/text', {text}),
   analyzePhoto: (file) => {

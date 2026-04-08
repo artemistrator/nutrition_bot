@@ -24,12 +24,16 @@ export default function DiaryPage() {
   const [todayData, setTodayData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [inputMode, setInputMode] = useState(null) // 'text' | 'photo' | 'quick-food' | 'quick-activity' | 'activity-text' | null
+  const [inputMode, setInputMode] = useState(null) // 'text' | 'photo' | 'quick-food' | 'quick-activity' | 'activity-text' | 'edit-meal' | 'delete-meal' | null
   const [inputValue, setInputValue] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [analysisResult, setAnalysisResult] = useState(null)
   const [activeTab, setActiveTab] = useState('food') // 'food' | 'activity'
   const [activityResult, setActivityResult] = useState(null)
+  const [selectedMeal, setSelectedMeal] = useState(null)
+  const [mealForm, setMealForm] = useState(null)
+  const [mutationLoading, setMutationLoading] = useState(false)
+  const [mutationError, setMutationError] = useState('')
 
   const loadToday = async () => {
     try {
@@ -136,11 +140,93 @@ export default function DiaryPage() {
     setAnalysisResult(null)
     setActivityResult(null)
     setAnalyzing(false)
+    setSelectedMeal(null)
+    setMealForm(null)
+    setMutationLoading(false)
+    setMutationError('')
+  }
+
+  const closeModal = () => {
+    setShowModal(false)
+    resetModal()
+  }
+
+  const goBackToChoice = () => {
+    resetModal()
+    setInputMode('choice')
   }
 
   const openModal = (mode) => {
     setInputMode(mode)
     setShowModal(true)
+  }
+
+  const openEditMeal = (meal) => {
+    setSelectedMeal(meal)
+    setMealForm({
+      description: meal.description || '',
+      calories: String(meal.calories ?? 0),
+      protein: String(meal.protein ?? 0),
+      fat: String(meal.fat ?? 0),
+      carbs: String(meal.carbs ?? 0),
+    })
+    setMutationError('')
+    setMutationLoading(false)
+    setInputMode('edit-meal')
+    setShowModal(true)
+  }
+
+  const openDeleteMeal = (meal) => {
+    setSelectedMeal(meal)
+    setMutationError('')
+    setMutationLoading(false)
+    setInputMode('delete-meal')
+    setShowModal(true)
+  }
+
+  const handleMealFieldChange = (field, value) => {
+    setMealForm(prev => ({ ...prev, [field]: value }))
+    setMutationError('')
+  }
+
+  const saveMealEdit = async () => {
+    if (!selectedMeal || !mealForm) return
+    setMutationLoading(true)
+    setMutationError('')
+    try {
+      await api.updateMeal(selectedMeal.id, {
+        description: mealForm.description.trim(),
+        calories: Number(mealForm.calories),
+        protein: Number(mealForm.protein),
+        fat: Number(mealForm.fat),
+        carbs: Number(mealForm.carbs),
+      })
+      await loadToday()
+      setShowModal(false)
+      resetModal()
+    } catch (e) {
+      setMutationError(e.response?.data?.detail || 'Не удалось сохранить изменения.')
+      console.error('Failed to update meal:', e)
+    } finally {
+      setMutationLoading(false)
+    }
+  }
+
+  const deleteMealEntry = async () => {
+    if (!selectedMeal) return
+    setMutationLoading(true)
+    setMutationError('')
+    try {
+      await api.deleteMeal(selectedMeal.id)
+      await loadToday()
+      setShowModal(false)
+      resetModal()
+    } catch (e) {
+      setMutationError(e.response?.data?.detail || 'Не удалось удалить запись.')
+      console.error('Failed to delete meal:', e)
+    } finally {
+      setMutationLoading(false)
+    }
   }
 
   const handleQuickFood = (text) => {
@@ -252,6 +338,17 @@ export default function DiaryPage() {
                 <div className="meal-card__macros">
                   Б {meal.protein.toFixed(0)} · Ж {meal.fat.toFixed(0)} · У {meal.carbs.toFixed(0)}
                 </div>
+                <div className="meal-card__actions">
+                  <button className="meal-card__action-btn" onClick={() => openEditMeal(meal)}>
+                    Изменить
+                  </button>
+                  <button
+                    className="meal-card__action-btn meal-card__action-btn--danger"
+                    onClick={() => openDeleteMeal(meal)}
+                  >
+                    Удалить
+                  </button>
+                </div>
               </div>
             )
           })
@@ -285,11 +382,13 @@ export default function DiaryPage() {
 
       {/* Modal */}
       {showModal && (
-        <div className="modal-overlay" onClick={() => { setShowModal(false); resetModal() }}>
+        <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h3 className="modal__title">
               {inputMode === 'quick-food' ? 'Быстрый ввод' :
                inputMode === 'quick-activity' ? 'Быстрая активность' :
+               inputMode === 'edit-meal' ? 'Исправить запись' :
+               inputMode === 'delete-meal' ? 'Удалить запись' :
                'Добавить'}
             </h3>
 
@@ -361,7 +460,7 @@ export default function DiaryPage() {
                   <span>У: {analysisResult.carbs?.toFixed(0)}г</span>
                 </div>
                 <div className="modal__result-actions">
-                  <button className="modal__cancel-btn" onClick={() => { setShowModal(false); resetModal() }}>
+                  <button className="modal__cancel-btn" onClick={closeModal}>
                     Отмена
                   </button>
                   <button className="modal__save-btn" onClick={saveMeal}>
@@ -381,7 +480,7 @@ export default function DiaryPage() {
                   )}
                 </div>
                 <div className="modal__result-actions">
-                  <button className="modal__cancel-btn" onClick={() => { setShowModal(false); resetModal() }}>
+                  <button className="modal__cancel-btn" onClick={closeModal}>
                     Отмена
                   </button>
                   <button className="modal__save-btn modal__save-btn--green" onClick={saveActivity}>
@@ -391,8 +490,103 @@ export default function DiaryPage() {
               </div>
             )}
 
-            {!analysisResult && !activityResult && inputMode && inputMode !== 'choice' && inputMode !== 'quick-food' && inputMode !== 'quick-activity' && (
-              <button className="modal__back-btn" onClick={resetModal}>← Назад</button>
+            {inputMode === 'edit-meal' && mealForm && (
+              <div className="modal__input-area">
+                <label className="modal__field">
+                  <span>Название</span>
+                  <input
+                    className="modal__input"
+                    type="text"
+                    value={mealForm.description}
+                    onChange={e => handleMealFieldChange('description', e.target.value)}
+                    placeholder="Например, борщ"
+                  />
+                </label>
+                <div className="modal__field-grid">
+                  <label className="modal__field">
+                    <span>Ккал</span>
+                    <input
+                      className="modal__input"
+                      type="number"
+                      min="0"
+                      max="5000"
+                      value={mealForm.calories}
+                      onChange={e => handleMealFieldChange('calories', e.target.value)}
+                    />
+                  </label>
+                  <label className="modal__field">
+                    <span>Белки</span>
+                    <input
+                      className="modal__input"
+                      type="number"
+                      min="0"
+                      max="500"
+                      step="0.1"
+                      value={mealForm.protein}
+                      onChange={e => handleMealFieldChange('protein', e.target.value)}
+                    />
+                  </label>
+                  <label className="modal__field">
+                    <span>Жиры</span>
+                    <input
+                      className="modal__input"
+                      type="number"
+                      min="0"
+                      max="500"
+                      step="0.1"
+                      value={mealForm.fat}
+                      onChange={e => handleMealFieldChange('fat', e.target.value)}
+                    />
+                  </label>
+                  <label className="modal__field">
+                    <span>Углеводы</span>
+                    <input
+                      className="modal__input"
+                      type="number"
+                      min="0"
+                      max="500"
+                      step="0.1"
+                      value={mealForm.carbs}
+                      onChange={e => handleMealFieldChange('carbs', e.target.value)}
+                    />
+                  </label>
+                </div>
+                {mutationError && <div className="modal__error">{mutationError}</div>}
+                <div className="modal__result-actions">
+                  <button className="modal__cancel-btn" onClick={closeModal}>
+                    Отмена
+                  </button>
+                  <button className="modal__save-btn" onClick={saveMealEdit} disabled={mutationLoading}>
+                    {mutationLoading ? 'Сохраняю...' : 'Сохранить'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {inputMode === 'delete-meal' && selectedMeal && (
+              <div className="modal__delete">
+                <p className="modal__delete-text">Удалить запись?</p>
+                <p className="modal__delete-subtext">
+                  {selectedMeal.description}
+                </p>
+                {mutationError && <div className="modal__error">{mutationError}</div>}
+                <div className="modal__result-actions">
+                  <button className="modal__cancel-btn" onClick={closeModal}>
+                    Отмена
+                  </button>
+                  <button
+                    className="modal__save-btn modal__save-btn--danger"
+                    onClick={deleteMealEntry}
+                    disabled={mutationLoading}
+                  >
+                    {mutationLoading ? 'Удаляю...' : 'Удалить'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!analysisResult && !activityResult && inputMode && inputMode !== 'choice' && inputMode !== 'quick-food' && inputMode !== 'quick-activity' && inputMode !== 'edit-meal' && inputMode !== 'delete-meal' && (
+              <button className="modal__back-btn" onClick={goBackToChoice}>← Назад</button>
             )}
           </div>
         </div>

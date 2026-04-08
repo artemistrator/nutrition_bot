@@ -354,6 +354,54 @@ async def get_today_meals(user_id: int) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+async def get_meal_by_id(meal_id: int, telegram_user_id: int) -> dict[str, Any] | None:
+    db = await _db()
+    cursor = await db.execute(
+        """
+        SELECT id, user_id, description, calories, protein, fat, carbs, created_at
+        FROM meals
+        WHERE id = ? AND user_id = ?;
+        """,
+        (meal_id, telegram_user_id),
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def update_meal(
+    meal_id: int,
+    telegram_user_id: int,
+    description: str,
+    calories: float,
+    protein: float,
+    fat: float,
+    carbs: float,
+) -> dict[str, Any] | None:
+    db = await _db()
+    cursor = await db.execute(
+        """
+        UPDATE meals
+        SET description = ?, calories = ?, protein = ?, fat = ?, carbs = ?
+        WHERE id = ? AND user_id = ?;
+        """,
+        (description, calories, protein, fat, carbs, meal_id, telegram_user_id),
+    )
+    await db.commit()
+    if cursor.rowcount <= 0:
+        return None
+    return await get_meal_by_id(meal_id, telegram_user_id)
+
+
+async def delete_meal(meal_id: int, telegram_user_id: int) -> bool:
+    db = await _db()
+    cursor = await db.execute(
+        "DELETE FROM meals WHERE id = ? AND user_id = ?;",
+        (meal_id, telegram_user_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
 async def add_activity(
     user_id: int,
     description: str,
@@ -846,6 +894,63 @@ def sync_get_today_meals(user_id: int) -> list[dict[str, Any]]:
             (user_id,),
         )
         return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def sync_get_meal_by_id(meal_id: int, telegram_user_id: int) -> dict[str, Any] | None:
+    conn = _sync_connect()
+    try:
+        cur = conn.execute(
+            """
+            SELECT id, user_id, description, calories, protein, fat, carbs, created_at
+            FROM meals
+            WHERE id = ? AND user_id = ?;
+            """,
+            (meal_id, telegram_user_id),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def sync_update_meal(
+    meal_id: int,
+    telegram_user_id: int,
+    description: str,
+    calories: float,
+    protein: float,
+    fat: float,
+    carbs: float,
+) -> dict[str, Any] | None:
+    conn = _sync_connect()
+    try:
+        cur = conn.execute(
+            """
+            UPDATE meals
+            SET description = ?, calories = ?, protein = ?, fat = ?, carbs = ?
+            WHERE id = ? AND user_id = ?;
+            """,
+            (description, calories, protein, fat, carbs, meal_id, telegram_user_id),
+        )
+        conn.commit()
+        if cur.rowcount <= 0:
+            return None
+    finally:
+        conn.close()
+    return sync_get_meal_by_id(meal_id, telegram_user_id)
+
+
+def sync_delete_meal(meal_id: int, telegram_user_id: int) -> bool:
+    conn = _sync_connect()
+    try:
+        cur = conn.execute(
+            "DELETE FROM meals WHERE id = ? AND user_id = ?;",
+            (meal_id, telegram_user_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
     finally:
         conn.close()
 

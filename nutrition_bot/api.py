@@ -3,23 +3,26 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, Header, HTTPException, Path as FastAPIPath, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from auth import verify_telegram_init_data
 from database import (
+    sync_delete_meal,
     ensure_db_schema_sync,
     init_db,
     sync_add_activity,
     sync_add_meal,
     sync_create_user,
     sync_get_activities_history,
+    sync_get_meal_by_id,
     sync_get_meals_history,
     sync_get_today_activities,
     sync_get_today_meals,
     sync_get_user,
     sync_get_user_profile,
+    sync_update_meal,
     sync_update_user_profile,
 )
 from services.nutrition import calculate_daily_totals
@@ -58,11 +61,23 @@ class ProfileUpdate(BaseModel):
 
 
 class MealCreate(BaseModel):
-    description: str
-    calories: float = 0.0
-    protein: float = 0.0
-    fat: float = 0.0
-    carbs: float = 0.0
+    description: str = Field(min_length=1, max_length=200)
+    calories: float = Field(default=0.0, ge=0, le=5000)
+    protein: float = Field(default=0.0, ge=0, le=500)
+    fat: float = Field(default=0.0, ge=0, le=500)
+    carbs: float = Field(default=0.0, ge=0, le=500)
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Название записи не может быть пустым.")
+        return value
+
+
+class MealUpdate(MealCreate):
+    pass
 
 
 class TextAnalyzeRequest(BaseModel):
@@ -191,6 +206,43 @@ def create_meal(
         "fat": body.fat,
         "carbs": body.carbs,
     }
+
+
+@app.put("/meals/{meal_id}")
+def update_meal_entry(
+    meal_id: int = FastAPIPath(ge=1),
+    body: MealUpdate = ...,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    telegram_id = user['id']
+    meal = sync_update_meal(
+        meal_id=meal_id,
+        telegram_user_id=telegram_id,
+        description=body.description,
+        calories=body.calories,
+        protein=body.protein,
+        fat=body.fat,
+        carbs=body.carbs,
+    )
+    if meal is None:
+        raise HTTPException(status_code=404, detail="Meal not found")
+    return meal
+
+
+@app.delete("/meals/{meal_id}")
+def delete_meal_entry(
+    meal_id: int = FastAPIPath(ge=1),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    telegram_id = user['id']
+    existing = sync_get_meal_by_id(meal_id, telegram_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Meal not found")
+
+    deleted = sync_delete_meal(meal_id, telegram_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Meal not found")
+    return {"ok": True, "deleted_id": meal_id}
 
 
 # ── Meals: history ───────────────────────────────────────────────
