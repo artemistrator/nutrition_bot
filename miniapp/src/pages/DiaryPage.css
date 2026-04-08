@@ -73,6 +73,10 @@
   font-weight: 500;
 }
 
+.calorie-ring__remaining--negative {
+  color: #dc2626;
+}
+
 .balance-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -107,6 +111,10 @@
 
 .balance-summary__value--blue {
   color: #2563eb;
+}
+
+.balance-summary__value--red {
+  color: #dc2626;
 }
 
 .calorie-ring__burned {
@@ -428,6 +436,26 @@
 
 .modal__choice-btn:active {
   border-color: #3b82f6;
+}
+
+.modal__choice-btn--template {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+
+.modal__choice-btn--template strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.modal__choice-btn--template span {
+  font-size: 13px;
+  color: #6b7280;
+  white-space: nowrap;
 }
 
 .modal__input-area {

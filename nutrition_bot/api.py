@@ -14,6 +14,7 @@ from database import (
     init_db,
     sync_add_activity,
     sync_add_meal,
+    sync_get_meal_template,
     sync_create_user,
     sync_get_activities_history,
     sync_get_meal_by_id,
@@ -22,6 +23,7 @@ from database import (
     sync_get_today_meals,
     sync_get_user,
     sync_get_user_profile,
+    sync_list_meal_templates,
     sync_update_meal,
     sync_update_user_profile,
 )
@@ -182,7 +184,7 @@ def get_today_meals(user: dict = Depends(get_current_user)) -> dict[str, Any]:
     net_calories = totals["calories"] - total_burned
 
     goal = db_user.get("goal_calories") or 0
-    remaining = max(goal - net_calories, 0) if goal else 0
+    remaining = goal - net_calories if goal else 0
 
     return {
         "meals": meals,
@@ -192,6 +194,69 @@ def get_today_meals(user: dict = Depends(get_current_user)) -> dict[str, Any]:
         "net_calories": net_calories,
         "goal_calories": goal,
         "remaining": remaining,
+    }
+
+
+@app.get("/templates")
+def get_templates(user: dict = Depends(get_current_user)) -> dict[str, Any]:
+    telegram_id = user["id"]
+    rows = sync_list_meal_templates(telegram_id)
+    templates = []
+    for row in rows:
+        structure = None
+        try:
+            structure = row.get("structure")  # sync rows do not include it
+        except AttributeError:
+            structure = None
+        if structure is None:
+            template = sync_get_meal_template(row["id"], telegram_id)
+        else:
+            template = row
+        if template is None:
+            continue
+        meal_calc = calculate_meal((template.get("structure") or {}).get("items", []))
+        templates.append({
+            "id": template["id"],
+            "title": template["title"],
+            "created_at": template["created_at"],
+            "calories": meal_calc["calories"],
+            "protein": meal_calc["protein"],
+            "fat": meal_calc["fat"],
+            "carbs": meal_calc["carbs"],
+        })
+    return {"templates": templates}
+
+
+@app.post("/templates/{template_id}/use")
+def use_template(
+    template_id: int = FastAPIPath(ge=1),
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    telegram_id = user["id"]
+    template = sync_get_meal_template(template_id, telegram_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+    structure = template.get("structure")
+    if not structure:
+        raise HTTPException(status_code=422, detail="Template structure is invalid")
+
+    meal_calc = calculate_meal(structure.get("items", []))
+    meal_id = sync_add_meal(
+        user_id=telegram_id,
+        description=template["title"],
+        calories=meal_calc["calories"],
+        protein=meal_calc["protein"],
+        fat=meal_calc["fat"],
+        carbs=meal_calc["carbs"],
+    )
+    return {
+        "id": meal_id,
+        "template_id": template_id,
+        "description": template["title"],
+        "calories": meal_calc["calories"],
+        "protein": meal_calc["protein"],
+        "fat": meal_calc["fat"],
+        "carbs": meal_calc["carbs"],
     }
 
 

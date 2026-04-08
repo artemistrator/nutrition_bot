@@ -24,13 +24,17 @@ export default function DiaryPage() {
   const [todayData, setTodayData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [inputMode, setInputMode] = useState(null) // 'text' | 'photo' | 'quick-food' | 'quick-activity' | 'activity-text' | 'edit-meal' | 'delete-meal' | null
+  const [inputMode, setInputMode] = useState(null) // 'text' | 'photo' | 'quick-food' | 'quick-activity' | 'activity-text' | 'templates' | 'edit-meal' | 'delete-meal' | null
   const [inputValue, setInputValue] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [analysisResult, setAnalysisResult] = useState(null)
   const [activeTab, setActiveTab] = useState('food') // 'food' | 'activity'
   const [activityResult, setActivityResult] = useState(null)
   const [activityError, setActivityError] = useState('')
+  const [templates, setTemplates] = useState([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templatesError, setTemplatesError] = useState('')
+  const [templateMutationLoading, setTemplateMutationLoading] = useState(null)
   const [selectedMeal, setSelectedMeal] = useState(null)
   const [mealForm, setMealForm] = useState(null)
   const [mutationLoading, setMutationLoading] = useState(false)
@@ -139,12 +143,53 @@ export default function DiaryPage() {
     }
   }
 
+  const loadTemplates = async () => {
+    setTemplatesLoading(true)
+    setTemplatesError('')
+    try {
+      const { data } = await api.getTemplates()
+      setTemplates(data.templates || [])
+    } catch (e) {
+      setTemplates([])
+      setTemplatesError(e.response?.data?.detail || 'Не удалось загрузить шаблоны.')
+      console.error('Failed to load templates:', e)
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }
+
+  const openTemplatesModal = async () => {
+    setInputMode('templates')
+    setShowModal(true)
+    await loadTemplates()
+  }
+
+  const addTemplateToDiary = async (templateId) => {
+    setTemplateMutationLoading(templateId)
+    setTemplatesError('')
+    try {
+      await api.useTemplate(templateId)
+      await loadToday()
+      setShowModal(false)
+      resetModal()
+    } catch (e) {
+      setTemplatesError(e.response?.data?.detail || 'Не удалось добавить шаблон.')
+      console.error('Failed to add template:', e)
+    } finally {
+      setTemplateMutationLoading(null)
+    }
+  }
+
   const resetModal = () => {
     setInputMode(null)
     setInputValue('')
     setAnalysisResult(null)
     setActivityResult(null)
     setActivityError('')
+    setTemplates([])
+    setTemplatesLoading(false)
+    setTemplatesError('')
+    setTemplateMutationLoading(null)
     setAnalyzing(false)
     setSelectedMeal(null)
     setMealForm(null)
@@ -251,8 +296,14 @@ export default function DiaryPage() {
   const totalCalories = todayData?.totals?.calories || 0
   const totalBurned = todayData?.total_burned || 0
   const netCalories = todayData?.net_calories ?? totalCalories
-  const progress = goal > 0 ? Math.min((netCalories / goal) * 100, 100) : 0
-  const remaining = Math.max(goal - netCalories, 0)
+  const progress = goal > 0 ? Math.max(0, Math.min((netCalories / goal) * 100, 100)) : 0
+  const remaining = todayData?.remaining ?? (goal ? goal - netCalories : 0)
+  const remainingClassName = remaining < 0
+    ? 'balance-summary__value balance-summary__value--red'
+    : 'balance-summary__value balance-summary__value--blue'
+  const remainingRingClassName = remaining < 0
+    ? 'calorie-ring__remaining calorie-ring__remaining--negative'
+    : 'calorie-ring__remaining'
   const meals = todayData?.meals || []
   const activities = todayData?.activities || []
   const hasActivities = activities.length > 0
@@ -290,7 +341,7 @@ export default function DiaryPage() {
             🏃 Сожжено: {totalBurned.toFixed(0)} ккал
           </div>
         )}
-        <div className="calorie-ring__remaining">
+        <div className={remainingRingClassName}>
           {goal ? `Осталось: ${remaining.toFixed(0)} ккал` : 'Заполни профиль, чтобы увидеть цель'}
         </div>
       </div>
@@ -306,7 +357,7 @@ export default function DiaryPage() {
         </div>
         <div className="balance-summary__item">
           <div className="balance-summary__label">Осталось</div>
-          <div className="balance-summary__value balance-summary__value--blue">{remaining.toFixed(0)} ккал</div>
+          <div className={remainingClassName}>{remaining.toFixed(0)} ккал</div>
         </div>
       </div>
 
@@ -412,6 +463,7 @@ export default function DiaryPage() {
             <h3 className="modal__title">
               {inputMode === 'quick-food' ? 'Быстрый ввод' :
                inputMode === 'quick-activity' ? 'Быстрая активность' :
+               inputMode === 'templates' ? 'Добавить из шаблона' :
                inputMode === 'edit-meal' ? 'Исправить запись' :
                inputMode === 'delete-meal' ? 'Удалить запись' :
                'Добавить'}
@@ -428,6 +480,36 @@ export default function DiaryPage() {
                 <button className="modal__choice-btn" onClick={() => openModal('photo')}>
                   📷 Загрузить фото
                 </button>
+                <button className="modal__choice-btn" onClick={() => openTemplatesModal()}>
+                  ⭐ Добавить из шаблона
+                </button>
+              </div>
+            )}
+
+            {inputMode === 'templates' && (
+              <div className="modal__input-area">
+                {templatesLoading ? (
+                  <p className="modal__loading">Загружаю шаблоны...</p>
+                ) : templates.length === 0 ? (
+                  <div className="modal__delete-subtext">
+                    У тебя пока нет шаблонов. Сначала сохрани шаблон в боте.
+                  </div>
+                ) : (
+                  <div className="modal__choices">
+                    {templates.map(template => (
+                      <button
+                        key={template.id}
+                        className="modal__choice-btn modal__choice-btn--template"
+                        onClick={() => addTemplateToDiary(template.id)}
+                        disabled={templateMutationLoading === template.id}
+                      >
+                        <strong>{template.title}</strong>
+                        <span>{Number(template.calories || 0).toFixed(0)} ккал</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {templatesError && <div className="modal__error">{templatesError}</div>}
               </div>
             )}
 

@@ -73,17 +73,22 @@ def _format_meal_preview(structure: dict, meal_calc: dict) -> str:
     for item in structure.get("items", []):
         name = item.get("name", "?")
         grams = item.get("grams", 0)
-        confidence = item.get("confidence", 1.0)
-        marker = " ⚠️" if confidence < 0.7 else ""
-        lines.append(f"• {name} — {grams:.0f} г{marker}")
+        lines.append(f"• {name} — {grams:.0f} г")
 
     # Ненайденные продукты
     not_found = [d for d in meal_calc.get("items_detail", []) if not d.get("found")]
+    approximate = [d for d in meal_calc.get("items_detail", []) if d.get("found") and d.get("approximate")]
+
+    if approximate:
+        names = ", ".join(f"«{item['name']}»" for item in approximate[:4])
+        suffix = "..." if len(approximate) > 4 else ""
+        lines.append(f"\nℹ️ **Оценка примерная** для: {names}{suffix}.")
+
     if not_found:
-        lines.append("\n⚠️ **Не удалось точно найти:**")
+        lines.append("\nℹ️ **Пока не удалось учесть точно:**")
         for nf in not_found:
             lines.append(f"• {nf['name']} ({nf['grams']:.0f} г)")
-        lines.append("\nНажми ✏️ Изменить чтобы исправить.")
+        lines.append("\nНажми ✏️ Изменить, если хочешь уточнить эти продукты.")
 
     lines.append(f"\n**Итого:**")
     lines.append(f"🔥 {meal_calc['calories']:.0f} ккал")

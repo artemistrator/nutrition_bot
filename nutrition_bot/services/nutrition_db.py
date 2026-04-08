@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,7 @@ FOOD_DB: dict[str, dict[str, float]] = {
     "картошка фри": {"calories_per_100g": 312, "protein": 3.4, "fat": 15.0, "carbs": 41.0},
     "овощи гриль": {"calories_per_100g": 70, "protein": 2.0, "fat": 4.0, "carbs": 6.0},
     "винегрет": {"calories_per_100g": 76, "protein": 1.5, "fat": 4.5, "carbs": 7.5},
+    "брокколи": {"calories_per_100g": 34, "protein": 2.8, "fat": 0.4, "carbs": 6.6},
     # Фрукты
     "банан": {"calories_per_100g": 96, "protein": 1.5, "fat": 0.5, "carbs": 21.0},
     "яблоко": {"calories_per_100g": 52, "protein": 0.3, "fat": 0.2, "carbs": 14.0},
@@ -152,31 +154,56 @@ FOOD_DB: dict[str, dict[str, float]] = {
     "хот-дог": {"calories_per_100g": 270, "protein": 11.0, "fat": 18.0, "carbs": 18.0},
     "наггетсы": {"calories_per_100g": 296, "protein": 15.0, "fat": 18.0, "carbs": 17.0},
     "чебурек": {"calories_per_100g": 276, "protein": 11.0, "fat": 16.0, "carbs": 22.0},
+    "макароны по-флотски": {"calories_per_100g": 180, "protein": 8.0, "fat": 7.5, "carbs": 20.0},
     # Соусы
     "майонез": {"calories_per_100g": 680, "protein": 1.0, "fat": 75.0, "carbs": 2.6},
     "кетчуп": {"calories_per_100g": 112, "protein": 1.7, "fat": 0.5, "carbs": 25.0},
     "соевый соус": {"calories_per_100g": 53, "protein": 8.1, "fat": 0.0, "carbs": 4.9},
 }
 
+_SPACE_PATTERN = re.compile(r"\s+")
+_FOOD_ALIASES: dict[str, str] = {
+    "broccoli": "брокколи",
+    "броколи": "брокколи",
+    "капуста брокколи": "брокколи",
+    "макароны по флотски": "макароны по-флотски",
+    "паста по флотски": "макароны по-флотски",
+    "макароны по-флотски": "макароны по-флотски",
+}
 
-def find_food(name: str) -> Optional[dict[str, float]]:
-    """Ищет продукт в базе по имени (точное + частичное совпадение)."""
-    key = name.strip().lower()
 
-    # Точное совпадение
+def _normalize_food_name(name: str) -> str:
+    normalized = name.strip().lower().replace("ё", "е")
+    normalized = normalized.replace("—", "-").replace("–", "-").replace("−", "-")
+    normalized = re.sub(r"[«»\"“”]", "", normalized)
+    normalized = _SPACE_PATTERN.sub(" ", normalized).strip()
+    return _FOOD_ALIASES.get(normalized, normalized)
+
+
+def resolve_food(name: str) -> tuple[Optional[str], Optional[dict[str, float]], bool]:
+    """Возвращает каноническое имя продукта, запись из БД и флаг приблизительного матча."""
+    key = _normalize_food_name(name)
+
     if key in FOOD_DB:
-        return FOOD_DB[key]
+        return key, FOOD_DB[key], key != name.strip().lower()
 
-    # Частичное совпадение — ищем ключ, содержащий имя
+    best_key: Optional[str] = None
     best_match: Optional[dict[str, float]] = None
     best_len = 0
     for db_key, db_val in FOOD_DB.items():
         if key in db_key or db_key in key:
             if len(db_key) > best_len:
+                best_key = db_key
                 best_match = db_val
                 best_len = len(db_key)
 
-    return best_match
+    return best_key, best_match, best_match is not None
+
+
+def find_food(name: str) -> Optional[dict[str, float]]:
+    """Ищет продукт в базе по имени (точное + частичное совпадение)."""
+    _, food, _ = resolve_food(name)
+    return food
 
 
 def calculate_meal(items: list[dict[str, Any]]) -> dict[str, Any]:
@@ -198,18 +225,20 @@ def calculate_meal(items: list[dict[str, Any]]) -> dict[str, Any]:
     items_detail: list[dict[str, Any]] = []
 
     for item in items:
-        name = item.get("name", "").strip().lower()
+        original_name = item.get("name", "").strip()
+        name = original_name.lower()
         grams = float(item.get("grams", 0))
         confidence = item.get("confidence", 1.0)
 
-        food = find_food(name)
+        matched_name, food, approximate_match = resolve_food(name)
         if food is None:
             logger.warning(f"Продукт не найден в базе: {name}")
             items_detail.append({
-                "name": item.get("name", name),
+                "name": original_name or name,
                 "grams": grams,
                 "found": False,
                 "confidence": confidence,
+                "approximate": False,
             })
             continue
 
@@ -225,7 +254,7 @@ def calculate_meal(items: list[dict[str, Any]]) -> dict[str, Any]:
         total["carbs"] += item_carbs
 
         items_detail.append({
-            "name": item.get("name", name),
+            "name": original_name or name,
             "grams": grams,
             "calories": round(item_calories, 1),
             "protein": round(item_protein, 1),
@@ -233,6 +262,8 @@ def calculate_meal(items: list[dict[str, Any]]) -> dict[str, Any]:
             "carbs": round(item_carbs, 1),
             "found": True,
             "confidence": confidence,
+            "canonical_name": matched_name or (original_name or name),
+            "approximate": approximate_match or confidence < 0.7,
         })
 
     # Округляем итог

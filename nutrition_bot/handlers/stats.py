@@ -60,7 +60,7 @@ async def today_command(message: Message) -> None:
         activity_lines.append(f"• {desc} ({time_str}{duration_text}) — −{burned:.0f} ккал")
 
     net_calories = totals["calories"] - total_burned
-    remaining = max(goal - net_calories, 0) if goal else 0
+    remaining = goal - net_calories if goal else 0
 
     parts = [f"📊 Сегодня, {date_str}:\n"]
     if meal_lines:

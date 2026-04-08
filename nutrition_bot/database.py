@@ -1085,6 +1085,47 @@ def sync_get_activities_history(user_id: int, days: int) -> list[dict[str, Any]]
         conn.close()
 
 
+def sync_list_meal_templates(telegram_user_id: int) -> list[dict[str, Any]]:
+    conn = _sync_connect()
+    try:
+        cur = conn.execute(
+            """
+            SELECT id, telegram_user_id, title, structure_json, created_at
+            FROM meal_templates
+            WHERE telegram_user_id = ?
+            ORDER BY created_at DESC;
+            """,
+            (telegram_user_id,),
+        )
+        return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def sync_get_meal_template(template_id: int, telegram_user_id: int) -> dict[str, Any] | None:
+    conn = _sync_connect()
+    try:
+        cur = conn.execute(
+            """
+            SELECT id, telegram_user_id, title, structure_json, created_at
+            FROM meal_templates
+            WHERE id = ? AND telegram_user_id = ?;
+            """,
+            (template_id, telegram_user_id),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        try:
+            result["structure"] = _json.loads(result["structure_json"])
+        except _json.JSONDecodeError:
+            result["structure"] = None
+        return result
+    finally:
+        conn.close()
+
+
 def sync_get_activity_by_id(activity_id: int, telegram_user_id: int) -> dict[str, Any] | None:
     conn = _sync_connect()
     try:
